@@ -7,8 +7,8 @@ interface WebDriver {
 
 /**
  * Highlights clickable elements like buttons, links, and certain divs and spans
- * that match the given CSS selector on the webpage with a red border and ensures 
- * that labels are visible and positioned correctly within the viewport.
+ * that match the given CSS selector on the webpage with a red border and only adds
+ * numeric labels to elements without text content.
  * 
  * @param driver - Instance of WebDriver
  * @param selector - CSS selector for the elements to be highlighted
@@ -77,35 +77,52 @@ export function highlightElementsWithLabels(driver: WebDriver, selector: string)
             }
         \`;
 
-        // Function to create and append a label to the body
+        // Function to get element's text or attribute content
+        function getElementIdentifier(element) {
+            const textContent = element.textContent?.trim();
+            const value = element.getAttribute('value')?.trim();
+            const ariaLabel = element.getAttribute('aria-label')?.trim();
+            const title = element.getAttribute('title')?.trim();
+            const placeholder = element.getAttribute('placeholder')?.trim();
+            
+            // Return the first non-empty value in order of priority
+            return textContent || value || ariaLabel || title || placeholder || '';
+        }
+
+        // Modified function to create and append label only for elements without text
         function createAndAdjustLabel(element, index) {
             if (!isElementVisible(element)) return;
 
             element.classList.add('highlighted-element');
-            var label = document.createElement('div');
-            label.className = 'highlight-label';
-            label.textContent = index.toString();
-            label.style.display = 'block'; // Make the label visible
+            const identifier = getElementIdentifier(element);
+            
+            // Only create label if there's no identifier
+            if (!identifier) {
+                var label = document.createElement('div');
+                label.className = 'highlight-label';
+                label.textContent = index.toString();
+                label.style.display = 'block';
 
-            // Calculate label position
-            var rect = element.getBoundingClientRect();
-            var top = rect.top + window.scrollY - 25; // Position label above the element
-            var left = rect.left + window.scrollX;
+                // Calculate label position
+                var rect = element.getBoundingClientRect();
+                var top = rect.top + window.scrollY - 25;
+                var left = rect.left + window.scrollX;
 
-            label.style.top = top + 'px';
-            label.style.left = left + 'px';
+                label.style.top = top + 'px';
+                label.style.left = left + 'px';
 
-            document.body.appendChild(label); // Append the label to the body
+                document.body.appendChild(label);
+            }
         }
 
-        // Select all clickable elements and apply the styles
+        // Select and highlight all elements, but only label those without text
         var allElements = document.querySelectorAll('${selector}');
-        var index = 1;
+        var numberIndex = 1;
+        
         allElements.forEach(function(element) {
-            // Check if the element is not already highlighted and is visible
             if (!element.dataset.highlighted && isElementVisible(element)) {
                 element.dataset.highlighted = 'true';
-                createAndAdjustLabel(element, index++);
+                createAndAdjustLabel(element, numberIndex++);
             }
         });
     `;

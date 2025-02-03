@@ -38,8 +38,9 @@ export class TypingWithEnterTool extends BaseTool {
         if (!this.page) throw new Error('Page not initialized');
 
         try {
+            console.log('Typing with Enter tool');
             // Wait for any navigation to complete
-            await this.page.waitForNavigation({ waitUntil: 'networkidle0' }).catch(() => {});
+            // await this.page.waitForNavigation({ waitUntil: 'networkidle0' }).catch(() => {});
 
             // Find the input field
             const inputField = await this.findInputField(placeholder_value);

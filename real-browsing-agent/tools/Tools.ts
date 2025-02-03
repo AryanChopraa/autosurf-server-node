@@ -45,23 +45,23 @@ export const TOOLS: Tool[] = [
             }
         }
     },
-    {
-        type: 'function',
-        function: {
-            name: SearchTool.openaiSchema.name,
-            description: SearchTool.openaiSchema.description,
-            parameters: {
-                type: 'object',
-                properties: {
-                    query: {
-                        type: 'string',
-                        description: 'The search query to execute'
-                    }
-                },
-                required: ['query']
-            }
-        }
-    },
+    // {
+    //     type: 'function',
+    //     function: {
+    //         name: SearchTool.openaiSchema.name,
+    //         description: SearchTool.openaiSchema.description,
+    //         parameters: {
+    //             type: 'object',
+    //             properties: {
+    //                 query: {
+    //                     type: 'string',
+    //                     description: 'The search query to execute'
+    //                 }
+    //             },
+    //             required: ['query']
+    //         }
+    //     }
+    // },
     {
         type: 'function',
         function: {
@@ -70,12 +70,12 @@ export const TOOLS: Tool[] = [
             parameters: {
                 type: 'object',
                 properties: {
-                    text: {
+                    identifier: {
                         type: 'string',
-                        description: 'The text content or attribute value of the element to click'
+                        description: 'The text content of the element to click, or the numbered label for elements without text'
                     }
                 },
-                required: ['text']
+                required: ['identifier']
             }
         }
     },

@@ -290,10 +290,10 @@ class AIBrowserAgent {
 
         try {
             // Use less strict network idle and shorter timeout
-            await this.page.waitForNavigation({ 
-                waitUntil: 'networkidle2',
-                timeout: 2000  // Further reduced from 3000 to 2000
-            }).catch(() => {});
+            // await this.page.waitForNavigation({ 
+            //     waitUntil: 'networkidle2',
+            //     timeout: 2000  // Further reduced from 3000 to 2000
+            // }).catch(() => {});
 
             // Initial CAPTCHA check
             const hasCaptcha = await this.detectCaptcha();
@@ -355,14 +355,14 @@ class AIBrowserAgent {
             }
 
             // Check for CAPTCHA after action
-            const postActionCaptcha = await this.detectCaptcha();
-            if (postActionCaptcha && this.captchaSolver) {
-                console.log('🔒 CAPTCHA detected after action');
-                const solved = await this.captchaSolver.run();
-                if (!solved.includes('Success')) {
-                    throw new Error('Failed to solve post-action CAPTCHA');
-                }
-            }
+            // const postActionCaptcha = await this.detectCaptcha();
+            // if (postActionCaptcha && this.captchaSolver) {
+            //     console.log('🔒 CAPTCHA detected after action');
+            //     const solved = await this.captchaSolver.run();
+            //     if (!solved.includes('Success')) {
+            //         throw new Error('Failed to solve post-action CAPTCHA');
+            //     }
+            // }
 
             // Only wait for DOM content to be available, with shorter timeout
             await this.page.waitForFunction(() => {

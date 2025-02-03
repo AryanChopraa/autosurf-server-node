@@ -243,6 +243,35 @@ class SolveCaptcha(BaseTool):
         wd.switch_to.default_content()
 
         try:
+            # First check if any captcha selectors are still present
+            captcha_selectors = [
+                'iframe[src*="recaptcha"][src*="anchor"]',
+                'iframe[src*="hcaptcha"][src*="challenge"]',
+                '#captcha:not([style*="display: none"])',
+                '.captcha:not([style*="display: none"])',
+                '[class*="captcha"]:not([style*="display: none"])',
+                '[id*="captcha"]:not([style*="display: none"])',
+                'iframe[title*="reCAPTCHA"]:not([style*="display: none"])',
+                '[aria-label*="captcha"]:not([style*="display: none"])',
+                'form[action*="captcha"]:not([style*="display: none"])'
+            ]
+            
+            # Check if any captcha elements are still present
+            captcha_present = False
+            for selector in captcha_selectors:
+                try:
+                    elements = wd.find_elements(By.CSS_SELECTOR, selector)
+                    if any(element.is_displayed() for element in elements):
+                        captcha_present = True
+                        break
+                except:
+                    continue
+            
+            # If no captcha elements are present, consider it a success
+            if not captcha_present:
+                return True
+
+            # If captcha elements are still present, check the checkbox state as before
             WebDriverWait(wd, 10).until(
                 frame_to_be_available_and_switch_to_it(
                     (By.XPATH, "//iframe[@title='reCAPTCHA']")

@@ -18,29 +18,35 @@ export class ClickTool extends BaseTool {
     static override getJsonSchema() {
         return {
             title: 'handle_click',
-            description: 'Click on an element with specific text or attributes',
+            description: 'Click on an element using text content or numbered label (for icons/images)',
             properties: {
-                text: {
+                identifier: {
                     type: 'string',
-                    description: 'The text content or attribute value of the element to click'
+                    description: 'The text content of the element to click, or the numbered label for elements without text'
                 }
             },
             type: 'object',
-            required: ['text']
+            required: ['identifier']
         };
     }
 
-    async run(text: string): Promise<string> {
+    async run(identifier: string): Promise<string> {
         if (!this.page) throw new Error('Page not initialized');
 
         try {
             // Wait for any navigation to complete
             await this.page.waitForNavigation({ waitUntil: 'networkidle0' }).catch(() => {});
 
-            // Try to find and click the element
-            const element = await this.findClickableElement(text);
+            // First try to find by text content
+            let element = await this.findClickableElement(identifier);
+
+            // If no element found by text and identifier is a number, try finding by label
+            if (!element && /^\d+$/.test(identifier)) {
+                element = await this.findElementByLabel(identifier);
+            }
+
             if (!element) {
-                throw new Error(`No clickable element found with text: ${text}`);
+                throw new Error(`No clickable element found with text or label: ${identifier}`);
             }
 
             await element.click();
@@ -56,6 +62,24 @@ export class ClickTool extends BaseTool {
             console.error('Click failed:', error);
             throw error;
         }
+    }
+
+    private async findElementByLabel(label: string): Promise<any> {
+        const elements = await this.page?.$$('.highlighted-element');
+        if (!elements) return null;
+
+        for (const element of elements) {
+            const labelElement = await this.page?.evaluateHandle((el: Element) => {
+                const rect = el.getBoundingClientRect();
+                return document.querySelector(`.highlight-label[style*="top: ${rect.top - 25}px"][style*="left: ${rect.left}px"]`) as Element;
+            }, element);
+
+            const labelText = await this.page?.evaluate((el: Element | null) => el?.textContent, labelElement);
+            if (labelText === label) {
+                return element;
+            }
+        }
+        return null;
     }
 
     private async findClickableElement(text: string) {

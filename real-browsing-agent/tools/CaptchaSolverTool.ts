@@ -20,6 +20,20 @@ interface CaptchaPageData {
     timestamp: number;
 }
 
+interface CaptchaAnalysis {
+    found: boolean;
+    inputField?: boolean;
+    selector?: string;
+    submitSelector?: string;
+    coordinates?: {
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+    };
+    instructions?: string;
+}
+
 export class CaptchaSolverTool extends BaseTool {
     protected static override ToolConfig = {
         ...BaseTool.ToolConfig,
@@ -117,8 +131,8 @@ export class CaptchaSolverTool extends BaseTool {
 
     private async detectCaptcha(): Promise<boolean> {
         const captchaSelectors = [
-            'iframe[src*="recaptcha"][src*="anchor"]', // Only match interactive reCAPTCHA frames
-            'iframe[src*="hcaptcha"][src*="challenge"]', // Only match interactive hCaptcha frames
+            'iframe[src*="recaptcha"][src*="anchor"]',
+            'iframe[src*="hcaptcha"][src*="challenge"]',
             '#captcha:not([style*="display: none"])',
             '.captcha:not([style*="display: none"])',
             '[class*="captcha"]:not([style*="display: none"])',
@@ -131,7 +145,6 @@ export class CaptchaSolverTool extends BaseTool {
         for (const selector of captchaSelectors) {
             const elements = await this.page.$$(selector);
             for (const element of elements) {
-                // Check if element is visible and not an aframe
                 const isVisible = await element.evaluate((el: HTMLElement) => {
                     const style = window.getComputedStyle(el);
                     const rect = el.getBoundingClientRect();
@@ -162,27 +175,72 @@ export class CaptchaSolverTool extends BaseTool {
         }
     }
 
-    private async findAndSwitchToFrame(urlPattern: string): Promise<Frame | null> {
+    private async findAndSwitchToFrame(type: 'anchor' | 'challenge'): Promise<Frame | null> {
+        if (!this.page) return null;
+
+        const selector = type === 'anchor' 
+            ? 'iframe[src*="recaptcha"][src*="anchor"]'
+            : 'iframe[title="recaptcha challenge expires in two minutes"]';
+
         try {
-            // Wait for frames to load
-            await new Promise(resolve => setTimeout(resolve, 1000));
-            
-            const frames = this.page?.frames() || [];
-            for (const frame of frames) {
-                try {
-                    const url = frame.url();
-                    if (url.includes(urlPattern)) {
-                        // Verify frame is still attached
-                        await frame.evaluate(() => true);
-                        return frame;
-                    }
-                } catch (e) {
-                    continue; // Frame was detached, try next one
-                }
-            }
-            return null;
+            // Wait for frame to be present (similar to Selenium's WebDriverWait)
+            await this.page.waitForFunction(
+                (sel: string) => {
+                    const frame = document.querySelector(sel);
+                    return frame && frame.getBoundingClientRect().height > 0;
+                },
+                { timeout: 10000 },
+                selector
+            );
+
+            // Get frame element
+            const frameElement = await this.page.$(selector);
+            if (!frameElement) return null;
+
+            // Switch to frame (similar to Selenium's switch_to.frame)
+            const frame = await frameElement.contentFrame();
+            if (!frame) return null;
+
+            // Wait for frame to be ready (similar to Selenium's frame_to_be_available_and_switch_to_it)
+            await frame.waitForFunction(
+                () => {
+                    return document.readyState === 'complete' && 
+                           document.body !== null &&
+                           window.getComputedStyle(document.body).display !== 'none';
+                },
+                { timeout: 5000 }
+            );
+
+            return frame;
         } catch (error) {
-            console.error(`Error finding frame with pattern ${urlPattern}:`, error);
+            console.error(`Error finding ${type} frame:`, error);
+            return null;
+        }
+    }
+
+    private async waitForElementInFrame(frame: Frame, selector: string, timeout = 5000): Promise<ElementHandle | null> {
+        try {
+            // Similar to Selenium's presence_of_element_located and WebDriverWait
+            await frame.waitForFunction(
+                (sel: string) => {
+                    const element = document.querySelector(sel);
+                    if (!element) return false;
+                    
+                    const rect = element.getBoundingClientRect();
+                    const style = window.getComputedStyle(element);
+                    
+                    return rect.width > 0 && 
+                           rect.height > 0 && 
+                           style.visibility !== 'hidden' && 
+                           style.display !== 'none';
+                },
+                { timeout },
+                selector
+            );
+
+            return await frame.$(selector);
+        } catch (error) {
+            console.error(`Error waiting for element ${selector}:`, error);
             return null;
         }
     }
@@ -234,22 +292,42 @@ export class CaptchaSolverTool extends BaseTool {
 
     private async getCaptchaTiles(frame: Frame): Promise<CaptchaTile[]> {
         try {
+            // Wait for tiles to be present
+            await frame.waitForSelector('.rc-imageselect-tile', { timeout: 5000 });
+            
+            // Get all tiles that haven't been selected yet
             const tiles = await frame.$$('.rc-imageselect-tile');
             const captchaTiles: CaptchaTile[] = [];
 
             for (const tile of tiles) {
                 try {
+                    // Check if tile is already selected
                     const isSelected = await frame.evaluate(
-                        (el) => el.classList.contains('rc-imageselect-dynamic-selected'),
+                        (el) => {
+                            return el.classList.contains('rc-imageselect-dynamic-selected') ||
+                                   el.classList.contains('rc-imageselect-tileselected');
+                        },
                         tile
                     );
 
                     if (!isSelected) {
-                        const screenshot = await this.getElementScreenshot(tile);
-                        captchaTiles.push({ element: tile, screenshot });
+                        // Take a screenshot of the tile
+                        const screenshot = await tile.screenshot({
+                            encoding: 'base64',
+                            type: 'jpeg',
+                            quality: 90
+                        });
+
+                        if (typeof screenshot === 'string') {
+                            captchaTiles.push({
+                                element: tile,
+                                screenshot: screenshot
+                            });
+                        }
                     }
                 } catch (e) {
-                    continue; // Skip problematic tiles
+                    console.error('Error processing tile:', e);
+                    continue;
                 }
             }
 
@@ -277,19 +355,40 @@ export class CaptchaSolverTool extends BaseTool {
             );
         });
 
+        // Clean up task text
+        let cleanTaskText = taskText
+            .replace('Click verify', 'Output 0')
+            .replace('click skip', 'Output 0')
+            .replace('once', 'if')
+            .replace('none left', 'none')
+            .replace('all', 'only')
+            .replace('squares', 'images');
+
+        // Add additional context for 4x4 grids
+        let additionalInfo = '';
+        if (tiles.length > 9) {
+            additionalInfo = 'Keep in mind that all images are a part of a bigger image from left to right, and top to bottom. The grid is 4x4.';
+        }
+
         try {
             const response = await this.client.chat.completions.create({
                 model: 'gpt-4o',
                 messages: [
                     {
                         role: 'system',
-                        content: 'You are an AI designed to solve visual CAPTCHA challenges. Analyze the images and identify which ones match the given task. Output ONLY the numbers of matching images, separated by commas. If no images match, output 0.'
+                        content: `You are an advanced AI designed to support users with visual impairments.
+                            User will provide you with ${tiles.length} images numbered from 1 to ${tiles.length}. Your task is to output
+                            the numbers of the images that contain the requested object, or at least some part of the requested
+                            object. ${additionalInfo} If there are no individual images that satisfy this condition, output 0.`
                     },
                     {
                         role: 'user',
                         content: [
                             ...imageContent,
-                            { type: 'text', text: `${taskText}. Only output numbers separated by commas.` }
+                            {
+                                type: 'text',
+                                text: `${cleanTaskText}. Only output numbers separated by commas and nothing else. Output 0 if there are none.`
+                            }
                         ]
                     }
                 ],
@@ -298,10 +397,17 @@ export class CaptchaSolverTool extends BaseTool {
             });
 
             const result = response.choices[0]?.message?.content || '0';
-            return result.split(',')
-                .map(s => s.trim())
-                .filter(s => s.match(/^\d+$/))
-                .map(s => parseInt(s, 10));
+            
+            // Parse the response into numbers
+            if (result.includes('0') && !result.includes('10')) {
+                return [];
+            }
+
+            return result
+                .split(',')
+                .map(s => parseInt(s.trim()))
+                .filter(n => !isNaN(n) && n > 0 && n <= tiles.length);
+
         } catch (error) {
             console.error('Error processing tiles with GPT:', error);
             return [];
@@ -397,27 +503,34 @@ export class CaptchaSolverTool extends BaseTool {
                 return false;
             }
 
-            // Save the page source first
+            // Save the page source and take a screenshot
             const url = this.page.url();
             const html = await this.page.content();
             await this.savePageSource(url, html);
 
-            // Take screenshot of the entire page
-            const screenshot = await this.page.screenshot({ encoding: 'base64' });
-            
-            // Process with GPT-4o
-            const response = await this.client.chat.completions.create({
+            // Take a full page screenshot
+            const screenshot = await this.page.screenshot({ 
+                encoding: 'base64',
+                fullPage: true,
+                type: 'jpeg',
+                quality: 90
+            });
+
+            // First, analyze the page to find CAPTCHA elements
+            const analysisResponse = await this.client.chat.completions.create({
                 model: 'gpt-4o',
-                response_format: { type: "json_object" },
                 messages: [
                     {
                         role: 'system',
-                        content: 'You are an AI designed to solve text CAPTCHA challenges. Look at this page screenshot and: 1) Find any text CAPTCHA in the image 2) Identify the input field placeholder or label for the CAPTCHA. Return a JSON object with format {"captchaText": "found text", "placeholder": "found placeholder"}.'
+                        content: 'You are an AI designed to analyze web pages for CAPTCHA elements. Look for text input fields, images, or any visual challenges that appear to be CAPTCHA-related.'
                     },
                     {
                         role: 'user',
                         content: [
-                            { type: 'text', text: 'Find and solve any text CAPTCHA in this image, and identify its input field placeholder/label.' },
+                            {
+                                type: 'text',
+                                text: 'Analyze this page for any CAPTCHA elements. Look for: 1) Text input fields with CAPTCHA-related labels or placeholders 2) Images containing text or visual challenges 3) Instructions asking to solve a puzzle or enter text from an image.'
+                            },
                             {
                                 type: 'image_url',
                                 image_url: {
@@ -428,21 +541,93 @@ export class CaptchaSolverTool extends BaseTool {
                         ]
                     }
                 ],
-                max_tokens: 150,
-                temperature: 0
+                response_format: { type: "json_object" }
             });
 
-            const result = response.choices[0]?.message?.content || '';
+            const analysis = JSON.parse(analysisResponse.choices[0]?.message?.content || '{}');
             
-            try {
-                const parsed = JSON.parse(result);
-                if (parsed.captchaText && parsed.placeholder) {
-                    const typingTool = new TypingTool(this.page, this.client);
-                    await typingTool.run(parsed.placeholder, parsed.captchaText);
-                    return await this.verifySolveSuccess();
+            if (!analysis.found) {
+                return false;
+            }
+
+            // If text input is found, try to solve the CAPTCHA
+            if (analysis.inputField) {
+                // Get a closer screenshot of the CAPTCHA area if coordinates are provided
+                let captchaScreenshot = screenshot;
+                if (analysis.coordinates) {
+                    const element = await this.page.$(analysis.selector);
+                    if (element) {
+                        const elementScreenshot = await element.screenshot({
+                            encoding: 'base64',
+                            type: 'jpeg',
+                            quality: 90
+                        });
+                        if (typeof elementScreenshot === 'string') {
+                            captchaScreenshot = elementScreenshot;
+                        }
+                    }
                 }
-            } catch (e) {
-                console.error('Error parsing GPT response:', e);
+
+                // Use GPT-4o to solve the CAPTCHA
+                const solutionResponse = await this.client.chat.completions.create({
+                    model: 'gpt-4o',
+                    messages: [
+                        {
+                            role: 'system',
+                            content: 'You are an AI designed to solve CAPTCHA challenges. Analyze the image and extract any text, numbers, or solve any visual puzzles present.'
+                        },
+                        {
+                            role: 'user',
+                            content: [
+                                {
+                                    type: 'text',
+                                    text: `${analysis.instructions || 'Solve this CAPTCHA. If you see text or numbers in the image, provide them exactly as shown. If it\'s a puzzle, describe the solution.'}`
+                                },
+                                {
+                                    type: 'image_url',
+                                    image_url: {
+                                        url: `data:image/jpeg;base64,${captchaScreenshot}`,
+                                        detail: 'high'
+                                    }
+                                }
+                            ]
+                        }
+                    ]
+                });
+
+                const solution = solutionResponse.choices[0]?.message?.content;
+                if (!solution) {
+                    return false;
+                }
+
+                // Try to input the solution
+                try {
+                    const inputField = await this.page.$(analysis.selector);
+                    if (inputField) {
+                        await inputField.click();
+                        await this.page.keyboard.type(solution);
+                        
+                        // If submit button is provided, click it
+                        if (analysis.submitSelector) {
+                            const submitButton = await this.page.$(analysis.submitSelector);
+                            if (submitButton) {
+                                await submitButton.click();
+                                await this.delay(2000);
+                            }
+                        } else {
+                            // Try pressing Enter
+                            await this.page.keyboard.press('Enter');
+                            await this.delay(2000);
+                        }
+
+                        // Check if CAPTCHA is still present
+                        const stillHasCaptcha = await this.detectCaptcha();
+                        return !stillHasCaptcha;
+                    }
+                } catch (error) {
+                    console.error('Error inputting CAPTCHA solution:', error);
+                    return false;
+                }
             }
 
             return false;
@@ -456,28 +641,30 @@ export class CaptchaSolverTool extends BaseTool {
         if (!this.page) throw new Error('Page not initialized');
 
         try {
-            // Check for common CAPTCHA elements
             const hasCaptcha = await this.detectCaptcha();
             if (!hasCaptcha) {
                 return 'No CAPTCHA detected on the page';
             }
 
-            // Try to solve reCAPTCHA if present
+            // Try reCAPTCHA first
+            console.log('Attempting to solve reCAPTCHA...');
             const recaptchaSolved = await this.solveReCaptcha();
             if (recaptchaSolved) {
                 return 'Successfully solved reCAPTCHA';
             }
 
-            // Try to solve hCaptcha if present
+            // Try hCaptcha next
+            console.log('Attempting to solve hCaptcha...');
             const hcaptchaSolved = await this.solveHCaptcha();
             if (hcaptchaSolved) {
                 return 'Successfully solved hCaptcha';
             }
 
-            // Try to solve text CAPTCHA as a fallback
+            // If neither worked, try the general text/image CAPTCHA solver
+            console.log('Attempting to solve text/image CAPTCHA...');
             const textCaptchaSolved = await this.solveTextCaptcha();
             if (textCaptchaSolved) {
-                return 'Successfully solved text CAPTCHA';
+                return 'Successfully solved text/image CAPTCHA';
             }
 
             return 'Unable to solve CAPTCHA';
@@ -487,90 +674,278 @@ export class CaptchaSolverTool extends BaseTool {
         }
     }
 
+    private async delay(ms: number): Promise<void> {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
     private async solveReCaptcha(): Promise<boolean> {
         try {
-            // Find visible reCAPTCHA iframe (excluding aframe)
-            const frames = await this.page.$$('iframe[src*="recaptcha"]');
-            let targetFrame = null;
+            // 1. First try to find and switch to reCAPTCHA iframe
+            const mainFrame = await this.findAndSwitchToFrame('anchor');
+            if (!mainFrame) {
+                console.log('No reCAPTCHA frame found');
+                return false;
+            }
 
-            for (const frame of frames) {
-                const isValidFrame = await frame.evaluate((el: HTMLIFrameElement) => {
-                    const src = el.getAttribute('src') || '';
-                    const style = window.getComputedStyle(el);
-                    const rect = el.getBoundingClientRect();
-                    return !src.includes('api2/aframe') && 
-                           src.includes('anchor') &&
-                           style.display !== 'none' && 
-                           style.visibility !== 'hidden' && 
-                           rect.width > 0 && 
-                           rect.height > 0;
+            // 2. Find and click the checkbox (using waitForElement instead of waitForSelector)
+            console.log('Finding and clicking checkbox...');
+            const checkbox = await this.waitForElementInFrame(mainFrame, '#recaptcha-anchor');
+            if (!checkbox) {
+                console.log('Checkbox not found');
+                return false;
+            }
+
+            // Click the checkbox using evaluate for better reliability
+            await mainFrame.evaluate((el: Element) => {
+                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                const clickEvent = new MouseEvent('click', {
+                    bubbles: true,
+                    cancelable: true,
+                    view: window
+                });
+                el.dispatchEvent(clickEvent);
+            }, checkbox);
+
+            // Quick check if CAPTCHA is still present after clicking
+            await this.delay(1500); // Short delay to allow for potential redirect
+            const stillHasCaptcha = await this.detectCaptcha();
+            if (!stillHasCaptcha) {
+                console.log('CAPTCHA solved immediately after checkbox click');
+                return true;
+            }
+
+            // 3. Wait for and check if checkbox was successful (similar to Selenium's WebDriverWait)
+            try {
+                await mainFrame.waitForFunction(
+                    () => {
+                        const checkbox = document.querySelector('.recaptcha-checkbox');
+                        return checkbox?.getAttribute('aria-checked') === 'true';
+                    },
+                    { timeout: 3000 }
+                );
+
+                // Double check after a short delay
+                await this.delay(1000);
+                const isChecked = await mainFrame.evaluate(() => {
+                    const checkbox = document.querySelector('.recaptcha-checkbox');
+                    return checkbox?.getAttribute('aria-checked') === 'true';
                 });
 
-                if (isValidFrame) {
-                    targetFrame = frame;
-                    break;
+                if (isChecked) {
+                    console.log('Checkbox clicked successfully');
+                    return true;
                 }
+            } catch (e) {
+                console.log(e);
+                console.log('Checkbox click did not succeed, attempting challenge');
             }
 
-            if (!targetFrame) {
-                console.log('No valid reCAPTCHA frame found');
+            // 4. Switch back to main content (similar to Selenium's switch_to.default_content())
+            if (this.page) {
+                await this.page.evaluate(() => {
+                    window.focus();
+                    document.documentElement.focus();
+                });
+            }
+
+            // Wait for and switch to challenge frame
+            console.log('Looking for challenge frame...');
+            const challengeFrame = await this.findAndSwitchToFrame('challenge');
+            if (!challengeFrame) {
+                console.log('No challenge frame found');
                 return false;
             }
 
-            // Switch to the frame
-            const frameContent = await targetFrame.contentFrame();
-            if (!frameContent) {
-                console.log('Could not access frame content');
-                return false;
-            }
+            // 5. Handle image challenge
+            console.log('Starting image challenge...');
+            let attempts = 0;
+            const maxAttempts = 5;
 
-            // Wait for and click the checkbox with retry logic
-            for (let i = 0; i < 3; i++) {
+            while (attempts < maxAttempts) {
+                console.log(`Attempt ${attempts + 1} of ${maxAttempts}`);
+
+                // Wait for challenge content
                 try {
-                    await frameContent.waitForSelector('.recaptcha-checkbox-border', { 
-                        visible: true,
-                        timeout: 2000 
-                    });
-                    
-                    await frameContent.click('.recaptcha-checkbox-border');
-                    await this.page.waitForTimeout(2000);
-
-                    const success = await frameContent.$('.recaptcha-checkbox-checked');
-                    if (success) {
-                        return true;
-                    }
-                } catch (e) {
-                    console.log(`Attempt ${i + 1} failed:`, e);
-                    await this.page.waitForTimeout(1000);
+                    await challengeFrame.waitForSelector('.rc-imageselect-instructions', { timeout: 5000 });
+                } catch (error) {
+                    console.log('Challenge instructions not found, checking if already solved');
+                    return await this.checkSuccess();
                 }
+
+                // Get task text
+                const taskText = await challengeFrame.evaluate(() => {
+                    const element = document.querySelector('.rc-imageselect-instructions');
+                    return element?.textContent?.trim().replace(/\n/g, ' ') || '';
+                });
+
+                if (!taskText) {
+                    console.log('No task text found, checking if already solved');
+                    return await this.checkSuccess();
+                }
+
+                const isContinuousTask = taskText.toLowerCase().includes('once there are none left');
+                console.log('Task:', taskText);
+                console.log('Continuous task:', isContinuousTask);
+
+                let continuousAttemptComplete = false;
+                while (isContinuousTask && !continuousAttemptComplete) {
+                    // Get and process tiles
+                    const tiles = await this.getCaptchaTiles(challengeFrame);
+                    if (tiles.length === 0) {
+                        if (await this.checkSuccess()) return true;
+                        continuousAttemptComplete = true;
+                        break;
+                    }
+
+                    const selectedTiles = await this.processTilesWithGPT(tiles, taskText);
+                    if (!selectedTiles || selectedTiles.length === 0) {
+                        // If no tiles selected in continuous mode, click verify to check if we're done
+                        await this.clickVerifyButton(challengeFrame);
+                        await this.delay(2000);
+                        
+                        // Check if we succeeded
+                        if (await this.checkSuccess()) return true;
+                        
+                        // If we're still here and no tiles were found, consider this attempt complete
+                        continuousAttemptComplete = true;
+                        break;
+                    }
+
+                    // Click tiles
+                    for (const tileIndex of selectedTiles) {
+                        if (tileIndex <= tiles.length) {
+                            try {
+                                await tiles[tileIndex - 1].element.click();
+                                await this.delay(300);
+                            } catch (error) {
+                                console.log(`Failed to click tile ${tileIndex}`);
+                            }
+                        }
+                    }
+
+                    await this.delay(1000);
+                    await this.clickVerifyButton(challengeFrame);
+                    await this.delay(2000);
+
+                    // Check if we succeeded after verify
+                    if (await this.checkSuccess()) return true;
+                }
+
+                // For non-continuous tasks or after a complete continuous attempt
+                if (!isContinuousTask) {
+                    // Get and process tiles
+                    const tiles = await this.getCaptchaTiles(challengeFrame);
+                    if (tiles.length === 0) {
+                        if (await this.checkSuccess()) return true;
+                        break;
+                    }
+
+                    const selectedTiles = await this.processTilesWithGPT(tiles, taskText);
+                    if (!selectedTiles || selectedTiles.length === 0) {
+                        await this.clickVerifyButton(challengeFrame);
+                        await this.delay(2000);
+                        if (await this.checkSuccess()) return true;
+                        attempts++;
+                        continue;
+                    }
+
+                    // Click tiles
+                    for (const tileIndex of selectedTiles) {
+                        if (tileIndex <= tiles.length) {
+                            try {
+                                await tiles[tileIndex - 1].element.click();
+                                await this.delay(300);
+                            } catch (error) {
+                                console.log(`Failed to click tile ${tileIndex}`);
+                            }
+                        }
+                    }
+
+                    await this.delay(1000);
+                    await this.clickVerifyButton(challengeFrame);
+                    await this.delay(2000);
+
+                    if (await this.checkSuccess()) return true;
+                }
+
+                attempts++;
+                await this.delay(1000);
             }
 
-            return false;
+            return await this.checkSuccess();
         } catch (error) {
             console.error('reCAPTCHA solving failed:', error);
             return false;
         }
     }
 
+    private async clickVerifyButton(frame: Frame): Promise<void> {
+        try {
+            const verifyButton = await frame.$('#recaptcha-verify-button');
+            if (verifyButton) {
+                await verifyButton.click();
+            }
+        } catch (error) {
+            console.error('Error clicking verify button:', error);
+        }
+    }
+
+    private async checkSuccess(): Promise<boolean> {
+        try {
+            await this.delay(1000); // Wait before checking
+
+            // First check if any captcha elements are still present
+            const hasCaptcha = await this.detectCaptcha();
+            if (!hasCaptcha) {
+                console.log('No CAPTCHA elements found, considering it solved');
+                return true;
+            }
+
+            // If captcha elements are still present, check the checkbox state
+            const mainFrame = await this.findAndSwitchToFrame('anchor');
+            if (!mainFrame) return false;
+
+            // Wait a bit for the state to settle
+            await this.delay(500);
+
+            const isChecked = await mainFrame.evaluate(() => {
+                const checkbox = document.querySelector('.recaptcha-checkbox');
+                return checkbox?.getAttribute('aria-checked') === 'true';
+            }).catch(() => false);
+
+            if (isChecked) {
+                // Double check after a short delay
+                await this.delay(1000);
+                const finalCheck = await mainFrame.evaluate(() => {
+                    const checkbox = document.querySelector('.recaptcha-checkbox');
+                    return checkbox?.getAttribute('aria-checked') === 'true';
+                }).catch(() => false);
+
+                return finalCheck;
+            }
+
+            return false;
+        } catch (error) {
+            console.error('Error checking success:', error);
+            return false;
+        }
+    }
+
     private async solveHCaptcha(): Promise<boolean> {
         try {
-            // Check for hCaptcha iframe
             const hcaptchaFrame = await this.page.$('iframe[src*="hcaptcha"]');
             if (!hcaptchaFrame) {
                 return false;
             }
 
-            // Switch to hCaptcha iframe
             const frame = await hcaptchaFrame.contentFrame();
             if (!frame) {
                 return false;
             }
 
-            // Click the checkbox
             await frame.click('.checkbox');
-            await this.page.waitForTimeout(2000);
+            await this.delay(2000);
 
-            // Check if solved
             const success = await frame.$('.checkbox.checked');
             return !!success;
         } catch (error) {
@@ -579,3 +954,4 @@ export class CaptchaSolverTool extends BaseTool {
         }
     }
 }
+
