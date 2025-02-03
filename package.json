@@ -1,0 +1,39 @@
+{
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.36.3",
+    "@langchain/openai": "^0.4.2",
+    "@playwright/test": "^1.50.0",
+    "@supabase/supabase-js": "^2.48.1",
+    "@types/axios": "^0.9.36",
+    "@types/cheerio": "^0.22.35",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.13.0",
+    "axios": "^1.7.9",
+    "base64-js": "^1.5.1",
+    "cheerio": "^1.0.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "langchain": "^0.3.15",
+    "lodash": "^4.17.21",
+    "morgan": "^1.10.0",
+    "openai": "^4.82.0",
+    "playwright": "^1.50.0",
+    "puppeteer": "^24.1.1",
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2",
+    "ws": "^8.18.0",
+    "zod": "^3.24.1"
+  },
+  "scripts": {
+    "dev": "nodemon --exec ts-node index.ts"
+  },
+  "devDependencies": {
+    "@types/lodash": "^4.17.15",
+    "@types/morgan": "^1.9.9",
+    "nodemon": "^2.0.22",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.7.3"
+  }
+}

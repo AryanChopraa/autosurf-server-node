@@ -1,0 +1,73 @@
+AI Browser Agent Architecture
+1. Core Components
+Puppeteer:
+
+Handles browser automation (navigation, clicking, scrolling, typing, etc.).
+
+Captures screenshots of the webpage for analysis.
+
+Executes DOM manipulations (e.g., highlighting links).
+
+OpenAI GPT-4:
+
+Acts as the "brain" of the agent, deciding which actions to take based on the task and the current state of the webpage.
+
+Uses the SYSTEM_PROMPT to understand its role and the tools available to it.
+
+Tools:
+
+A set of predefined functions (handle_url, handle_search, handle_click, handle_scroll, handle_typing) that the agent can call to interact with the webpage.
+
+Highlight Script:
+
+A utility (highlightLinks) that identifies and highlights clickable elements on the webpage by adding custom attributes (gpt-link-text, gpt-alt-text).
+
+Task Execution Loop:
+
+The agent continuously interacts with the webpage and OpenAI in a loop until the task is completed.
+
+2. Workflow
+Initialization:
+
+The agent launches a Puppeteer browser instance and sets up a new page.
+
+Task Execution:
+
+The user provides a task (e.g., "Find the latest news on AI").
+
+The agent sends the task and the current state of the webpage (via a screenshot) to OpenAI.
+
+OpenAI responds with a tool call (e.g., handle_search or handle_click).
+
+Action Execution:
+
+The agent executes the tool call using Puppeteer (e.g., navigating to a URL, clicking a link, or scrolling the page).
+
+After executing the action, the agent captures a new screenshot and sends it back to OpenAI for further instructions.
+
+Completion:
+
+The loop continues until OpenAI determines that the task is complete and provides a final response.
+
+3. Enhanced Features
+Robust Error Handling:
+
+Retries failed actions up to 3 times.
+
+Provides detailed error messages for debugging.
+
+Dynamic Content Support:
+
+Waits for dynamic content to load before interacting with elements.
+
+Human-Like Interactions:
+
+Simulates human behavior with delays (e.g., hovering before clicking, waiting after typing).
+
+Advanced Element Identification:
+
+Identifies all interactive elements, including text-based, image-based, and dynamically loaded elements.
+
+Optimized Screenshot Capture:
+
+Captures only the visible portion of the page for faster processing.
