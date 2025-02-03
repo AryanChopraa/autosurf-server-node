@@ -48,16 +48,13 @@ export class CaptchaSolverTool extends BaseTool {
     private captchaDataDir: string;
     private captchaDataFile: string;
     private captchaPagesMap: Map<string, CaptchaPageData>;
-    private captchaSourceDir: string;
 
     constructor(page: Page, client: OpenAI) {
         super(page, client);
         this.captchaDataDir = path.join(process.cwd(), 'captcha-data');
         this.captchaDataFile = path.join(this.captchaDataDir, 'selectors-map.json');
         this.captchaPagesMap = new Map();
-        this.captchaSourceDir = path.join(process.cwd(), 'captcha-sources');
         this.initCaptchaDataDir();
-        this.initCaptchaSourceDir();
     }
 
     private initCaptchaDataDir() {
@@ -71,12 +68,6 @@ export class CaptchaSolverTool extends BaseTool {
             }
         } catch (error) {
             console.error('Error initializing captcha data directory:', error);
-        }
-    }
-
-    private initCaptchaSourceDir() {
-        if (!fs.existsSync(this.captchaSourceDir)) {
-            fs.mkdirSync(this.captchaSourceDir, { recursive: true });
         }
     }
 
@@ -485,28 +476,11 @@ export class CaptchaSolverTool extends BaseTool {
         }
     }
 
-    private async savePageSource(url: string, html: string) {
-        try {
-            const urlHash = crypto.createHash('md5').update(url).digest('hex');
-            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-            const fileName = path.join(this.captchaSourceDir, `${urlHash}_${timestamp}.html`);
-            fs.writeFileSync(fileName, html);
-            console.log(`Page source saved to: ${fileName}`);
-        } catch (error) {
-            console.error('Error saving page source:', error);
-        }
-    }
-
     private async solveTextCaptcha(): Promise<boolean> {
         try {
             if (!this.client || !this.page) {
                 return false;
             }
-
-            // Save the page source and take a screenshot
-            const url = this.page.url();
-            const html = await this.page.content();
-            await this.savePageSource(url, html);
 
             // Take a full page screenshot
             const screenshot = await this.page.screenshot({ 
