@@ -12,7 +12,7 @@ async function main() {
         console.log('Browser agent initialized successfully');
 
         // Define the task
-        const task = "Go to finance.yahoo.com, search for Apple stock (AAPL), and tell me the current stock price and any key statistics you find.";
+        const task = "First go to amazon.com, then search for detergent and tell me about the first 3 results that you see";
 
         console.log('Starting task:', task);
 

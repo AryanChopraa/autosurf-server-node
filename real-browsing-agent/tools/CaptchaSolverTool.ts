@@ -1,10 +1,23 @@
 import { BaseTool } from './BaseTools';
 import { Page, Frame, ElementHandle } from 'puppeteer';
 import OpenAI from 'openai';
+import { TypingTool } from './TypingTool';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as crypto from 'crypto';
 
 interface CaptchaTile {
     element: ElementHandle;
     screenshot: string;
+}
+
+interface CaptchaPageData {
+    url: string;
+    selectors: {
+        inputSelector: string;
+        captchaSelector: string;
+    };
+    timestamp: number;
 }
 
 export class CaptchaSolverTool extends BaseTool {
@@ -18,9 +31,78 @@ export class CaptchaSolverTool extends BaseTool {
 
     private retryCount = 0;
     private maxRetries = 5;
+    private captchaDataDir: string;
+    private captchaDataFile: string;
+    private captchaPagesMap: Map<string, CaptchaPageData>;
+    private captchaSourceDir: string;
 
     constructor(page: Page, client: OpenAI) {
         super(page, client);
+        this.captchaDataDir = path.join(process.cwd(), 'captcha-data');
+        this.captchaDataFile = path.join(this.captchaDataDir, 'selectors-map.json');
+        this.captchaPagesMap = new Map();
+        this.captchaSourceDir = path.join(process.cwd(), 'captcha-sources');
+        this.initCaptchaDataDir();
+        this.initCaptchaSourceDir();
+    }
+
+    private initCaptchaDataDir() {
+        try {
+            if (!fs.existsSync(this.captchaDataDir)) {
+                fs.mkdirSync(this.captchaDataDir, { recursive: true });
+            }
+            if (fs.existsSync(this.captchaDataFile)) {
+                const data = JSON.parse(fs.readFileSync(this.captchaDataFile, 'utf-8'));
+                this.captchaPagesMap = new Map(Object.entries(data));
+            }
+        } catch (error) {
+            console.error('Error initializing captcha data directory:', error);
+        }
+    }
+
+    private initCaptchaSourceDir() {
+        if (!fs.existsSync(this.captchaSourceDir)) {
+            fs.mkdirSync(this.captchaSourceDir, { recursive: true });
+        }
+    }
+
+    private async saveCaptchaPageData(url: string, html: string, selectors: { inputSelector: string; captchaSelector: string }) {
+        try {
+            // Create hash of the URL to use as identifier
+            const urlHash = crypto.createHash('md5').update(url).digest('hex');
+            
+            // Save the HTML content
+            const htmlFileName = path.join(this.captchaDataDir, `${urlHash}.html`);
+            fs.writeFileSync(htmlFileName, html);
+
+            // Update the selectors map
+            const pageData: CaptchaPageData = {
+                url,
+                selectors,
+                timestamp: Date.now()
+            };
+            this.captchaPagesMap.set(urlHash, pageData);
+
+            // Save the updated map
+            const mapData = Object.fromEntries(this.captchaPagesMap);
+            fs.writeFileSync(this.captchaDataFile, JSON.stringify(mapData, null, 2));
+        } catch (error) {
+            console.error('Error saving captcha page data:', error);
+        }
+    }
+
+    private async findExistingSelectors(url: string): Promise<{ inputSelector: string; captchaSelector: string } | null> {
+        try {
+            const urlHash = crypto.createHash('md5').update(url).digest('hex');
+            const pageData = this.captchaPagesMap.get(urlHash);
+            
+            if (pageData && Date.now() - pageData.timestamp < 7 * 24 * 60 * 60 * 1000) { // 7 days validity
+                return pageData.selectors;
+            }
+        } catch (error) {
+            console.error('Error finding existing selectors:', error);
+        }
+        return null;
     }
 
     static override getJsonSchema() {
@@ -297,6 +379,79 @@ export class CaptchaSolverTool extends BaseTool {
         }
     }
 
+    private async savePageSource(url: string, html: string) {
+        try {
+            const urlHash = crypto.createHash('md5').update(url).digest('hex');
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+            const fileName = path.join(this.captchaSourceDir, `${urlHash}_${timestamp}.html`);
+            fs.writeFileSync(fileName, html);
+            console.log(`Page source saved to: ${fileName}`);
+        } catch (error) {
+            console.error('Error saving page source:', error);
+        }
+    }
+
+    private async solveTextCaptcha(): Promise<boolean> {
+        try {
+            if (!this.client || !this.page) {
+                return false;
+            }
+
+            // Save the page source first
+            const url = this.page.url();
+            const html = await this.page.content();
+            await this.savePageSource(url, html);
+
+            // Take screenshot of the entire page
+            const screenshot = await this.page.screenshot({ encoding: 'base64' });
+            
+            // Process with GPT-4o
+            const response = await this.client.chat.completions.create({
+                model: 'gpt-4o',
+                response_format: { type: "json_object" },
+                messages: [
+                    {
+                        role: 'system',
+                        content: 'You are an AI designed to solve text CAPTCHA challenges. Look at this page screenshot and: 1) Find any text CAPTCHA in the image 2) Identify the input field placeholder or label for the CAPTCHA. Return a JSON object with format {"captchaText": "found text", "placeholder": "found placeholder"}.'
+                    },
+                    {
+                        role: 'user',
+                        content: [
+                            { type: 'text', text: 'Find and solve any text CAPTCHA in this image, and identify its input field placeholder/label.' },
+                            {
+                                type: 'image_url',
+                                image_url: {
+                                    url: `data:image/jpeg;base64,${screenshot}`,
+                                    detail: 'high'
+                                }
+                            }
+                        ]
+                    }
+                ],
+                max_tokens: 150,
+                temperature: 0
+            });
+
+            const result = response.choices[0]?.message?.content || '';
+            
+            try {
+                const parsed = JSON.parse(result);
+                if (parsed.captchaText && parsed.placeholder) {
+                    const typingTool = new TypingTool(this.page, this.client);
+                    await typingTool.run(parsed.placeholder, parsed.captchaText);
+                    return await this.verifySolveSuccess();
+                }
+            } catch (e) {
+                console.error('Error parsing GPT response:', e);
+            }
+
+            return false;
+        } catch (error) {
+            console.error('Text CAPTCHA solving failed:', error);
+            return false;
+        }
+    }
+
     async run(): Promise<string> {
         if (!this.page) throw new Error('Page not initialized');
 
@@ -317,6 +472,12 @@ export class CaptchaSolverTool extends BaseTool {
             const hcaptchaSolved = await this.solveHCaptcha();
             if (hcaptchaSolved) {
                 return 'Successfully solved hCaptcha';
+            }
+
+            // Try to solve text CAPTCHA as a fallback
+            const textCaptchaSolved = await this.solveTextCaptcha();
+            if (textCaptchaSolved) {
+                return 'Successfully solved text CAPTCHA';
             }
 
             return 'Unable to solve CAPTCHA';

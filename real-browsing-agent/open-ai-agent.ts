@@ -7,7 +7,10 @@ import { NavigationTool } from './tools/NavigationTool';
 import { SearchTool } from './tools/SearchTool';
 import { ClickTool } from './tools/ClickTool';
 import { TypingTool } from './tools/TypingTool';
+import { TypingWithEnterTool } from './tools/TypingWithEnterTool';
 import { CaptchaSolverTool } from './tools/CaptchaSolverTool';
+import { ScrollTool } from './tools/ScrollTool';
+import { BackTool } from './tools/BackTool';
 import { highlightElementsWithLabels, removeHighlightAndLabels } from './utils/HighlightScript';
 import fs from 'fs';
 
@@ -34,7 +37,10 @@ class AIBrowserAgent {
     private searchTool: SearchTool | null = null;
     private clickTool: ClickTool | null = null;
     private typingTool: TypingTool | null = null;
+    private typingWithEnterTool: TypingWithEnterTool | null = null;
     private captchaSolver: CaptchaSolverTool | null = null;
+    private scrollTool: ScrollTool | null = null;
+    private backTool: BackTool | null = null;
     private SCREENSHOT_FILE_NAME = "screenshot.jpg";
     private prev_message = "";
     private sharedState: Map<string, string> = new Map();
@@ -69,7 +75,10 @@ class AIBrowserAgent {
             this.searchTool = new SearchTool(this.page, this.client);
             this.clickTool = new ClickTool(this.page, this.client);
             this.typingTool = new TypingTool(this.page, this.client);
+            this.typingWithEnterTool = new TypingWithEnterTool(this.page, this.client);
             this.captchaSolver = new CaptchaSolverTool(this.page, this.client);
+            this.scrollTool = new ScrollTool(this.page, this.client);
+            this.backTool = new BackTool(this.page, this.client);
         }
         
         console.log('Browser started successfully');
@@ -305,22 +314,42 @@ class AIBrowserAgent {
                     if (!this.navigationTool) throw new Error('Navigation tool not initialized');
                     result = await this.navigationTool.run(parsedArgs.url);
                     break;
-
+                
                 case 'handle_search':
                     if (!this.searchTool) throw new Error('Search tool not initialized');
                     result = await this.searchTool.run(parsedArgs.query);
                     break;
-
+                
                 case 'handle_click':
                     if (!this.clickTool) throw new Error('Click tool not initialized');
                     result = await this.clickTool.run(parsedArgs.text);
                     break;
-
+                
                 case 'handle_typing':
                     if (!this.typingTool) throw new Error('Typing tool not initialized');
                     result = await this.typingTool.run(parsedArgs.placeholder_value, parsedArgs.text);
                     break;
 
+                case 'handle_typing_with_enter':
+                    if (!this.typingWithEnterTool) throw new Error('Typing with Enter tool not initialized');
+                    result = await this.typingWithEnterTool.run(parsedArgs.placeholder_value, parsedArgs.text);
+                    break;
+                
+                case 'handle_captcha':
+                    if (!this.captchaSolver) throw new Error('Captcha solver not initialized');
+                    result = await this.captchaSolver.run();
+                    break;
+                
+                case 'handle_scroll':
+                    if (!this.scrollTool) throw new Error('Scroll tool not initialized');
+                    result = await this.scrollTool.run(parsedArgs.direction, parsedArgs.amount);
+                    break;
+                
+                case 'handle_back':
+                    if (!this.backTool) throw new Error('Back tool not initialized');
+                    result = await this.backTool.run();
+                    break;
+                
                 default:
                     throw new Error(`Unknown tool: ${name}`);
             }

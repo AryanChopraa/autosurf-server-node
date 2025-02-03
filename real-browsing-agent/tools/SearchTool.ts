@@ -47,16 +47,47 @@ export class SearchTool extends BaseTool {
                 'input[placeholder*="search"]',
                 'input[aria-label*="Search"]',
                 'input[aria-label*="search"]',
-                '#yfin-usr-qry',  // Yahoo Finance specific
-                '#header-search-input',  // Yahoo Finance specific
-                '[name="p"]'  // Yahoo Finance specific
+                '#twotabsearchtextbox',  // Amazon specific
+                '#nav-search-keywords',   // Amazon specific
+                '#nav-search input',      // Amazon specific
+                '#yfin-usr-qry',         // Yahoo Finance specific
+                '#header-search-input',   // Yahoo Finance specific
+                '[name="p"]',            // Yahoo Finance specific
+                '[name="field-keywords"]' // Amazon specific
             ];
 
             let searchInput = null;
+            // First try to wait for any of the search inputs to appear
+            try {
+                await this.page.waitForFunction((selectors: string[]) => {
+                    return selectors.some((selector: string) => document.querySelector(selector) !== null);
+                }, { timeout: 5000 }, searchSelectors);
+            } catch (error) {
+                console.log('Timeout waiting for search input to appear, will try direct selection');
+            }
+
+            // Try each selector
             for (const selector of searchSelectors) {
-                searchInput = await this.page.$(selector);
-                if (searchInput) {
-                    break;
+                try {
+                    // Wait a short time for each selector
+                    searchInput = await this.page.waitForSelector(selector, { timeout: 1000 });
+                    if (searchInput) {
+                        console.log(`Found search input with selector: ${selector}`);
+                        break;
+                    }
+                } catch (error) {
+                    continue;
+                }
+            }
+
+            // If still no search input found, try one last time with regular selection
+            if (!searchInput) {
+                for (const selector of searchSelectors) {
+                    searchInput = await this.page.$(selector);
+                    if (searchInput) {
+                        console.log(`Found search input with regular selection: ${selector}`);
+                        break;
+                    }
                 }
             }
 

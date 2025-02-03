@@ -2,7 +2,10 @@ import { NavigationTool } from './NavigationTool';
 import { SearchTool } from './SearchTool';
 import { ClickTool } from './ClickTool';
 import { TypingTool } from './TypingTool';
+import { TypingWithEnterTool } from './TypingWithEnterTool';
 import { CaptchaSolverTool } from './CaptchaSolverTool';
+import { ScrollTool } from './ScrollTool';
+import { BackTool } from './BackTool';
 import OpenAI from 'openai';
 
 export interface ToolFunction {
@@ -100,8 +103,62 @@ export const TOOLS: Tool[] = [
     {
         type: 'function',
         function: {
+            name: 'handle_typing_with_enter',
+            description: 'Type text into an input field and press Enter',
+            parameters: {
+                type: 'object',
+                properties: {
+                    placeholder_value: {
+                        type: 'string',
+                        description: 'The placeholder text or label of the input field'
+                    },
+                    text: {
+                        type: 'string',
+                        description: 'The text to type into the field'
+                    }
+                },
+                required: ['placeholder_value', 'text']
+            }
+        }
+    },
+    {
+        type: 'function',
+        function: {
             name: CaptchaSolverTool.openaiSchema.name,
             description: CaptchaSolverTool.openaiSchema.description,
+            parameters: {
+                type: 'object',
+                properties: {},
+                required: []
+            }
+        }
+    },
+    {
+        type: 'function',
+        function: {
+            name: ScrollTool.openaiSchema.name,
+            description: ScrollTool.openaiSchema.description,
+            parameters: {
+                type: 'object',
+                properties: {
+                    direction: {
+                        type: 'string',
+                        description: 'The direction to scroll: must be either "up" or "down"'
+                    },
+                    amount: {
+                        type: 'number',
+                        description: 'The amount to scroll in pixels (default is viewport height)'
+                    }
+                },
+                required: ['direction']
+            }
+        }
+    },
+    {
+        type: 'function',
+        function: {
+            name: BackTool.openaiSchema.name,
+            description: BackTool.openaiSchema.description,
             parameters: {
                 type: 'object',
                 properties: {},

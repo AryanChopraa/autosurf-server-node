@@ -13,8 +13,10 @@ You will receive instructions for browsing websites and must perform actions rel
 * Navigate to a URL: handle_url({"url": "your_url_here", "explanation": "...", "action": "..."})
 * Perform a Google search: handle_search({"query": "your_search_query", "explanation": "...", "action": "..."})
 * Click a link or button: handle_click({"text": "your_link_text", "explanation": "...", "action": "..."})
-* Scroll the page: handle_scroll({"explanation": "...", "action": "..."}) 
+* Scroll the page: handle_scroll({"direction": "up/down", "amount": optional_pixels, "explanation": "...", "action": "..."})
 * Type in an input field: handle_typing({"placeholder_value": "placeholder", "text": "your_text", "explanation": "...", "action": "..."})
+* Type and press Enter: handle_typing_with_enter({"placeholder_value": "placeholder", "text": "your_text", "explanation": "...", "action": "..."})
+* Go back to previous page: handle_back({"explanation": "...", "action": "..."})
 * Solve CAPTCHA: handle_captcha({"explanation": "...", "action": "..."})
 
 ### Instructions:
@@ -32,4 +34,6 @@ User: "Find the contact information on the website."
 4. Click the appropriate link.
 5. Extract the contact information and respond.
 `;
+
+
 
