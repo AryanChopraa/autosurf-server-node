@@ -12,7 +12,7 @@ async function main() {
         console.log('Browser agent initialized successfully');
 
         // Define the task
-        const task = "go to google and serach for news about newest ai model deep seek";
+        const task = "go to google.com and search for apple and scroll down to last of the page and tell what is the last article on the page";
 
         console.log('Starting task:', task);
 

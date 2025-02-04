@@ -17,46 +17,41 @@ export class ScrollTool extends BaseTool {
 
     static override getJsonSchema() {
         return {
-            title: 'handle_scroll',
-            description: 'Scroll the page up or down',
+            title: 'scroll_down',
+            description: 'Scroll down the page by one viewport height',
+            type: 'object',
             properties: {
-                direction: {
+                explanation: {
                     type: 'string',
-                    description: 'The direction to scroll: "up" or "down"',
-                    enum: ['up', 'down']
+                    description: 'Explanation for why this action is being taken.'
                 },
-                amount: {
-                    type: 'number',
-                    description: 'The amount to scroll in pixels (default is viewport height)'
+                action: {
+                    type: 'string',
+                    description: 'Textual summary of the action being taken.'
                 }
             },
-            type: 'object',
-            required: ['direction']
+            required: []
         };
     }
 
-    async run(direction: string, amount?: number): Promise<string> {
+    async run(): Promise<string> {
         if (!this.page) throw new Error('Page not initialized');
 
         try {
-            // Get viewport height if amount is not specified
-            const viewportHeight = await this.page.evaluate(() => window.innerHeight);
-            const scrollAmount = amount || viewportHeight;
-
-            // Perform the scroll
-            await this.page.evaluate((params: { direction: string; amount: number }) => {
-                const { direction, amount } = params;
-                const scrollY = direction === 'up' ? -amount : amount;
+            // Get viewport height and scroll by that amount
+            const scrollResult = await this.page.evaluate(() => {
+                const viewportHeight = window.innerHeight;
                 window.scrollBy({
-                    top: scrollY,
+                    top: viewportHeight,
                     behavior: 'smooth'
                 });
-            }, { direction, amount: scrollAmount });
+                return viewportHeight;
+            });
 
             // Wait for scroll to complete
             await this.page.waitForTimeout(500);
 
-            return `Successfully scrolled ${direction} by ${scrollAmount} pixels`;
+            return `Successfully scrolled down by ${Math.round(scrollResult)} pixels`;
         } catch (error) {
             console.error('Scrolling failed:', error);
             throw error;

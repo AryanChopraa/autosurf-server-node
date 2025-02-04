@@ -11,7 +11,12 @@ import { TypingWithEnterTool } from './tools/TypingWithEnterTool';
 import { CaptchaSolverTool } from './tools/CaptchaSolverTool';
 import { ScrollTool } from './tools/ScrollTool';
 import { BackTool } from './tools/BackTool';
-import { highlightElementsWithLabels, removeHighlightAndLabels } from './utils/HighlightScript';
+import { 
+    HIGHLIGHT_ELEMENTS_SCRIPT, 
+    HIGHLIGHT_TEXT_FIELDS_SCRIPT, 
+    HIGHLIGHT_DROPDOWNS_SCRIPT, 
+    REMOVE_HIGHLIGHTS_SCRIPT 
+} from './utils/HighlightScript';
 import fs from 'fs';
 
 dotenv.config();
@@ -42,6 +47,7 @@ class AIBrowserAgent {
     private scrollTool: ScrollTool | null = null;
     private backTool: BackTool | null = null;
     private SCREENSHOT_FILE_NAME = "screenshot.jpg";
+    private SCREENSHOTS_DIR = "screenshots";
     private prev_message = "";
     private sharedState: Map<string, string> = new Map();
 
@@ -49,6 +55,10 @@ class AIBrowserAgent {
         this.client = new OpenAI({
             apiKey: process.env.OPENAI_API_KEY,
         });
+        // Create screenshots directory if it doesn't exist
+        if (!fs.existsSync(this.SCREENSHOTS_DIR)) {
+            fs.mkdirSync(this.SCREENSHOTS_DIR);
+        }
     }
 
     async initialize() {
@@ -95,90 +105,76 @@ class AIBrowserAgent {
         }
 
         this.prev_message = filteredMessage;
-
-        if (message.toLowerCase().includes("[send screenshot]")) {
+         if (message) {
             await this.removeHighlights();
-            await this.takeScreenshot();
-            return "Here is the screenshot of the current web page:";
-        }
-
-        if (message.toLowerCase().includes("[highlight clickable elements]")) {
             await this.highlightClickableElements();
-            await this.takeScreenshot();
-
-            const elementTexts = await this.getHighlightedElementTexts();
-            const elementTextsFormatted = this.formatElementTexts(elementTexts);
-
-            return `Here is the screenshot of the current web page with highlighted clickable elements. \n\n` +
-                   `Texts of the elements are: ${elementTextsFormatted}.\n\n` +
-                   `Elements without text are not shown, but are available on screenshot. \n` +
-                   `Please make sure to analyze the screenshot to find the clickable element you need to click on.`;
         }
 
-        if (message.toLowerCase().includes("[highlight text fields]")) {
-            await this.highlightTextFields();
-            await this.takeScreenshot();
 
-            const elementTexts = await this.getHighlightedElementTexts();
-            const elementTextsFormatted = this.formatElementTexts(elementTexts);
+        // if (message.toLowerCase().includes("[send screenshot]")) {
+        //     await this.removeHighlights();
+        //     await this.takeScreenshot();
+        //     return "Here is the screenshot of the current web page:";
+        // }
 
-            return `Here is the screenshot of the current web page with highlighted text fields: \n` +
-                   `Texts of the elements are: ${elementTextsFormatted}.\n` +
-                   `Please make sure to analyze the screenshot to find the text field you need to fill.`;
-        }
+        // if (message.toLowerCase().includes("[highlight clickable elements]")) {
+        //     await this.highlightClickableElements();
+        //     await this.takeScreenshot();
 
-        if (message.toLowerCase().includes("[highlight dropdowns]")) {
-            await this.highlightDropdowns();
-            await this.takeScreenshot();
+        //     const elementTexts = await this.getHighlightedElementTexts();
+        //     const elementTextsFormatted = this.formatElementTexts(elementTexts);
 
-            const dropdownValues = await this.getDropdownValues();
-            const dropdownValuesFormatted = this.formatDropdownValues(dropdownValues);
+        //     return `Here is the screenshot of the current web page with highlighted clickable elements. \n\n` +
+        //            `Texts of the elements are: ${elementTextsFormatted}.\n\n` +
+        //            `Elements without text are not shown, but are available on screenshot. \n` +
+        //            `Please make sure to analyze the screenshot to find the clickable element you need to click on.`;
+        // }
 
-            return `Here is the screenshot with highlighted dropdowns. \n` +
-                   `Selector values are: ${dropdownValuesFormatted}.\n` +
-                   `Please make sure to analyze the screenshot to find the dropdown you need to select.`;
-        }
+        // if (message.toLowerCase().includes("[highlight text fields]")) {
+        //     await this.highlightTextFields();
+        //     await this.takeScreenshot();
+
+        //     const elementTexts = await this.getHighlightedElementTexts();
+        //     const elementTextsFormatted = this.formatElementTexts(elementTexts);
+
+        //     return `Here is the screenshot of the current web page with highlighted text fields: \n` +
+        //            `Texts of the elements are: ${elementTextsFormatted}.\n` +
+        //            `Please make sure to analyze the screenshot to find the text field you need to fill.`;
+        // }
+
+        // if (message.toLowerCase().includes("[highlight dropdowns]")) {
+        //     await this.highlightDropdowns();
+        //     await this.takeScreenshot();
+
+        //     const dropdownValues = await this.getDropdownValues();
+        //     const dropdownValuesFormatted = this.formatDropdownValues(dropdownValues);
+
+        //     return `Here is the screenshot with highlighted dropdowns. \n` +
+        //            `Selector values are: ${dropdownValuesFormatted}.\n` +
+        //            `Please make sure to analyze the screenshot to find the dropdown you need to select.`;
+        // }
 
         return message;
     }
 
     private async highlightClickableElements() {
         if (!this.page) return;
-        const selector = 'a, button, div[onclick], div[role="button"], div[tabindex], ' +
-                        'span[onclick], span[role="button"], span[tabindex]';
-        this.sharedState.set('elements_highlighted', selector);
-        await this.page.evaluate((sel) => {
-            const adapter = createWebDriverAdapter(window);
-            highlightElementsWithLabels(adapter, sel);
-        }, selector);
+        await this.page.evaluate(HIGHLIGHT_ELEMENTS_SCRIPT);
     }
 
     private async highlightTextFields() {
         if (!this.page) return;
-        const selector = 'input, textarea';
-        this.sharedState.set('elements_highlighted', selector);
-        await this.page.evaluate((sel) => {
-            const adapter = createWebDriverAdapter(window);
-            highlightElementsWithLabels(adapter, sel);
-        }, selector);
+        await this.page.evaluate(HIGHLIGHT_TEXT_FIELDS_SCRIPT);
     }
 
     private async highlightDropdowns() {
         if (!this.page) return;
-        const selector = 'select';
-        this.sharedState.set('elements_highlighted', selector);
-        await this.page.evaluate((sel) => {
-            const adapter = createWebDriverAdapter(window);
-            highlightElementsWithLabels(adapter, sel);
-        }, selector);
+        await this.page.evaluate(HIGHLIGHT_DROPDOWNS_SCRIPT);
     }
 
     private async removeHighlights() {
         if (!this.page) return;
-        await this.page.evaluate(() => {
-            const adapter = createWebDriverAdapter(window);
-            removeHighlightAndLabels(adapter);
-        });
+        await this.page.evaluate(REMOVE_HIGHLIGHTS_SCRIPT);
     }
 
     private async getHighlightedElementTexts(): Promise<string[]> {
@@ -257,10 +253,9 @@ class AIBrowserAgent {
         ];
     }
 
-    private async capturePageState(): Promise<string | null> {
+    private async capturePageState(stepCount: number): Promise<string | null> {
         if (!this.page) return null;
         try {
-            // Remove unnecessary 1 second delay and reduce network idle timeout
             await this.page.waitForNetworkIdle({ timeout: 2000 }).catch(() => {});
             
             await this.page.evaluate(() => {
@@ -270,10 +265,18 @@ class AIBrowserAgent {
 
             const screenshot = await this.page.screenshot({ 
                 encoding: 'base64',
-                fullPage: true,
+                fullPage: false, // Only capture visible portion
                 type: 'jpeg',
-                quality: 80
+                quality: 100 // Maximum quality
             });
+            
+            if (typeof screenshot === 'string' && stepCount > 1) {
+                // Save screenshot with step number
+                const stepScreenshotPath = `${this.SCREENSHOTS_DIR}/screenshot-step${stepCount}.jpg`;
+                const buffer = Buffer.from(screenshot, 'base64');
+                fs.writeFileSync(stepScreenshotPath, buffer);
+                console.log(`Screenshot saved: ${stepScreenshotPath}`);
+            }
             
             return typeof screenshot === 'string' ? screenshot : null;
         } catch (e) {
@@ -282,11 +285,14 @@ class AIBrowserAgent {
         }
     }
 
-    private async executeAction(toolCall: OpenAI.ChatCompletionMessageToolCall): Promise<string | null> {
+    private async executeAction(toolCall: OpenAI.ChatCompletionMessageToolCall, stepCount: number): Promise<string | null> {
         if (!this.page) return null;
 
         const { function: { name, arguments: functionArgs } } = toolCall;
         const parsedArgs = JSON.parse(functionArgs);
+        console.log("The explanation is:", parsedArgs.explanation);
+        console.log("The action is:", parsedArgs.action);
+
 
         try {
             // Use less strict network idle and shorter timeout
@@ -306,6 +312,7 @@ class AIBrowserAgent {
                     throw new Error('Failed to solve initial CAPTCHA');
                 }
             }
+            this.highlightClickableElements();
 
             // Execute the action using the appropriate tool
             let result: string;
@@ -322,7 +329,7 @@ class AIBrowserAgent {
                 
                 case 'handle_click':
                     if (!this.clickTool) throw new Error('Click tool not initialized');
-                    result = await this.clickTool.run(parsedArgs.text);
+                    result = await this.clickTool.run(parsedArgs.identifier);
                     break;
                 
                 case 'handle_typing':
@@ -342,7 +349,7 @@ class AIBrowserAgent {
                 
                 case 'handle_scroll':
                     if (!this.scrollTool) throw new Error('Scroll tool not initialized');
-                    result = await this.scrollTool.run(parsedArgs.direction, parsedArgs.amount);
+                    result = await this.scrollTool.run();
                     break;
                 
                 case 'handle_back':
@@ -369,7 +376,7 @@ class AIBrowserAgent {
                 return document.readyState !== 'loading' && document.body != null;
             }, { timeout: 1000 }).catch(() => {}); // Reduced timeout to 1 second
 
-            return await this.capturePageState();
+            return await this.capturePageState(stepCount);
 
         } catch (error) {
             console.error('Action execution failed:', error);
@@ -469,6 +476,13 @@ class AIBrowserAgent {
         console.log('\n=== 🚀 Starting New Task ===');
         console.log('📝 Task:', task);
 
+        // Clean up screenshots directory at the start of each task
+        if (fs.existsSync(this.SCREENSHOTS_DIR)) {
+            fs.readdirSync(this.SCREENSHOTS_DIR).forEach(file => {
+                fs.unlinkSync(`${this.SCREENSHOTS_DIR}/${file}`);
+            });
+        }
+
         const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
             { role: 'system', content: SYSTEM_PROMPT },
             { role: 'user', content: task }
@@ -493,6 +507,7 @@ class AIBrowserAgent {
                 console.log('Content:', response.content);
                 console.log('Tool Calls:', JSON.stringify(response.tool_calls, null, 2));
 
+
                 if (response.content) {
                     console.log('\n🔍 Validating response...');
                     const validatedResponse = await this.responseValidator(response.content);
@@ -505,11 +520,19 @@ class AIBrowserAgent {
                         stepCount++;
                         continue;
                     }
+
+                    // Add this block to handle final answers without tool calls
+                    if (!response.tool_calls) {
+                        console.log('\n✅ Final answer received (no tool calls):', validatedResponse);
+                        messages.push({ role: 'assistant', content: validatedResponse });
+                        break;
+                    }
                 }
 
                 if (response.tool_calls) {
                     console.log('\n🛠️ Executing tool calls...');
-                    const screenshot = await this.executeAction(response.tool_calls[0]);
+                    stepCount++;
+                    const screenshot = await this.executeAction(response.tool_calls[0], stepCount);
                     console.log('Tool execution result:', screenshot ? 'Success' : 'Failed');
 
                     if (screenshot) {
@@ -522,7 +545,6 @@ class AIBrowserAgent {
                             ] as OpenAI.Chat.ChatCompletionContentPart[]
                         });
                     }
-                    stepCount++;
                 } else {
                     console.log('\n✅ Final answer received:', response.content);
                     break;

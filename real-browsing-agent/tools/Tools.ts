@@ -39,6 +39,14 @@ export const TOOLS: Tool[] = [
                     url: {
                         type: 'string',
                         description: 'The URL to navigate to'
+                    },
+                    explanation: {
+                        type: 'string',
+                        description: 'Explanation for why this action is being taken.'
+                    },
+                    action: {
+                        type: 'string',
+                        description: 'Textual summary of the action being taken.'
                     }
                 },
                 required: ['url']
@@ -56,6 +64,14 @@ export const TOOLS: Tool[] = [
     //                 query: {
     //                     type: 'string',
     //                     description: 'The search query to execute'
+    //                 },
+    //                 explanation: {
+    //                     type: 'string',
+    //                     description: 'Explanation for why this action is being taken.'
+    //                 },
+    //                 action: {
+    //                     type: 'string',
+    //                     description: 'Textual summary of the action being taken.'
     //                 }
     //             },
     //             required: ['query']
@@ -72,7 +88,15 @@ export const TOOLS: Tool[] = [
                 properties: {
                     identifier: {
                         type: 'string',
-                        description: 'The text content of the element to click, or the numbered label for elements without text'
+                        description: 'The text content to click example Login , Which countries have restricted DeepSeek and why?, Rin Detergent Liquid 2L Pouch - Top Load, Top news on DeepSeek'
+                    },
+                    explanation: {
+                        type: 'string',
+                        description: 'Explanation for why this action is being taken.'
+                    },
+                    action: {
+                        type: 'string',
+                        description: 'Textual summary of the action being taken.'
                     }
                 },
                 required: ['identifier']
@@ -94,6 +118,14 @@ export const TOOLS: Tool[] = [
                     text: {
                         type: 'string',
                         description: 'The text to type into the field'
+                    },
+                    explanation: {
+                        type: 'string',
+                        description: 'Explanation for why this action is being taken.'
+                    },
+                    action: {
+                        type: 'string',
+                        description: 'Textual summary of the action being taken.'
                     }
                 },
                 required: ['placeholder_value', 'text']
@@ -115,6 +147,14 @@ export const TOOLS: Tool[] = [
                     text: {
                         type: 'string',
                         description: 'The text to type into the field'
+                    },
+                    explanation: {
+                        type: 'string',
+                        description: 'Explanation for why this action is being taken.'
+                    },
+                    action: {
+                        type: 'string',
+                        description: 'Textual summary of the action being taken.'
                     }
                 },
                 required: ['placeholder_value', 'text']
@@ -128,7 +168,16 @@ export const TOOLS: Tool[] = [
             description: CaptchaSolverTool.openaiSchema.description,
             parameters: {
                 type: 'object',
-                properties: {},
+                properties: {
+                    explanation: {
+                        type: 'string',
+                        description: 'Explanation for why this action is being taken.'
+                    },
+                    action: {
+                        type: 'string',
+                        description: 'Textual summary of the action being taken.'
+                    }
+                },
                 required: []
             }
         }
@@ -141,16 +190,16 @@ export const TOOLS: Tool[] = [
             parameters: {
                 type: 'object',
                 properties: {
-                    direction: {
+                    explanation: {
                         type: 'string',
-                        description: 'The direction to scroll: must be either "up" or "down"'
+                        description: 'Explanation for why this action is being taken.'
                     },
-                    amount: {
-                        type: 'number',
-                        description: 'The amount to scroll in pixels (default is viewport height)'
+                    action: {
+                        type: 'string',
+                        description: 'Textual summary of the action being taken.'
                     }
                 },
-                required: ['direction']
+                required: []
             }
         }
     },
@@ -161,7 +210,16 @@ export const TOOLS: Tool[] = [
             description: BackTool.openaiSchema.description,
             parameters: {
                 type: 'object',
-                properties: {},
+                properties: {
+                    explanation: {
+                        type: 'string',
+                        description: 'Explanation for why this action is being taken.'
+                    },
+                    action: {
+                        type: 'string',
+                        description: 'Textual summary of the action being taken.'
+                    }
+                },
                 required: []
             }
         }
