@@ -505,14 +505,68 @@ class AIBrowserAgent {
                     scriptContent += `    await page.goto('${cmd.url}');\n`;
                     break;
                 case 'click':
-                    scriptContent += `    await page.click('${cmd.selector}');\n`;
+                    if (cmd.selector) {
+                        scriptContent += `    await page.click('${cmd.selector}');\n`;
+                    }
                     break;
                 case 'type':
-                    scriptContent += `    await page.type('${cmd.selector}', '${cmd.value}');\n`;
+                    if (cmd.selector && cmd.value) {
+                        // Use a more robust selector that matches what TypingTool uses
+                        scriptContent += `    await page.waitForSelector('input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([aria-hidden="true"]):not(.hidden):not(.invisible), textarea:not([aria-hidden="true"]):not(.hidden):not(.invisible)');\n`;
+                        scriptContent += `    const inputField = await page.$$eval('input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([aria-hidden="true"]):not(.hidden):not(.invisible), textarea:not([aria-hidden="true"]):not(.hidden):not(.invisible)', (elements, searchText) => {
+            return elements.find(el => {
+                const placeholder = el.placeholder?.trim();
+                const label = el.labels?.[0]?.textContent?.trim();
+                const ariaLabel = el.getAttribute('aria-label')?.trim();
+                const name = el.name?.trim();
+                const id = el.id?.trim();
+                return [placeholder, label, ariaLabel, name, id].some(value => 
+                    value && value.toLowerCase().includes(searchText.toLowerCase())
+                );
+            });
+        }, '${cmd.selector.replace(/\[placeholder="(.*)"\]/, "$1")}');\n`;
+                        scriptContent += `    if (!inputField) throw new Error('Input field not found');\n`;
+                        scriptContent += `    await page.evaluate((selector) => {
+            const element = document.querySelector(selector);
+            if (element) {
+                element.click();
+                element.value = '';
+            }
+        }, inputField);\n`;
+                        scriptContent += `    await page.type(inputField, '${cmd.value}');\n`;
+                    }
                     break;
                 case 'typeAndEnter':
-                    scriptContent += `    await page.type('${cmd.selector}', '${cmd.value}');\n`;
-                    scriptContent += `    await page.keyboard.press('Enter');\n`;
+                    if (cmd.selector && cmd.value) {
+                        // Use the same robust selector logic for typeAndEnter
+                        scriptContent += `    await page.waitForSelector('input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([aria-hidden="true"]):not(.hidden):not(.invisible), textarea:not([aria-hidden="true"]):not(.hidden):not(.invisible)');\n`;
+                        scriptContent += `    const inputFieldWithEnter = await page.$$eval('input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([aria-hidden="true"]):not(.hidden):not(.invisible), textarea:not([aria-hidden="true"]):not(.hidden):not(.invisible)', (elements, searchText) => {
+            return elements.find(el => {
+                const placeholder = el.placeholder?.trim();
+                const label = el.labels?.[0]?.textContent?.trim();
+                const ariaLabel = el.getAttribute('aria-label')?.trim();
+                const name = el.name?.trim();
+                const id = el.id?.trim();
+                return [placeholder, label, ariaLabel, name, id].some(value => 
+                    value && value.toLowerCase().includes(searchText.toLowerCase())
+                );
+            });
+        }, '${cmd.selector.replace(/\[placeholder="(.*)"\]/, "$1")}');\n`;
+                        scriptContent += `    if (!inputFieldWithEnter) throw new Error('Input field not found');\n`;
+                        scriptContent += `    await page.evaluate((selector) => {
+            const element = document.querySelector(selector);
+            if (element) {
+                element.click();
+                element.value = '';
+            }
+        }, inputFieldWithEnter);\n`;
+                        scriptContent += `    await page.type(inputFieldWithEnter, '${cmd.value}');\n`;
+                        // Add a small delay before pressing Enter to ensure typing is complete
+                        scriptContent += `    await page.waitForTimeout(100);\n`;
+                        scriptContent += `    await page.keyboard.press('Enter');\n`;
+                        // Add a wait for navigation since Enter often triggers page changes
+                        scriptContent += `    try { await page.waitForNavigation({ waitUntil: 'networkidle0', timeout: 5000 }).catch(() => {}); } catch (e) {}\n`;
+                    }
                     break;
                 case 'scroll':
                     scriptContent += `    await page.evaluate(() => window.scrollBy(0, 500));\n`;

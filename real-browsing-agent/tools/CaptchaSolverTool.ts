@@ -5,6 +5,7 @@ import { TypingTool } from './TypingTool';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
+import { TypingWithEnterTool } from './TypingWithEnterTool';
 
 interface CaptchaTile {
     element: ElementHandle;
@@ -477,136 +478,195 @@ export class CaptchaSolverTool extends BaseTool {
     }
 
     private async solveTextCaptcha(): Promise<boolean> {
-        try {
-            if (!this.client || !this.page) {
-                return false;
-            }
-
-            // Take a full page screenshot
-            const screenshot = await this.page.screenshot({ 
-                encoding: 'base64',
-                fullPage: true,
-                type: 'jpeg',
-                quality: 90
-            });
-
-            // First, analyze the page to find CAPTCHA elements
-            const analysisResponse = await this.client.chat.completions.create({
-                model: 'gpt-4o',
-                messages: [
-                    {
-                        role: 'system',
-                        content: 'You are an AI designed to analyze web pages for CAPTCHA elements. Look for text input fields, images, or any visual challenges that appear to be CAPTCHA-related.'
-                    },
-                    {
-                        role: 'user',
-                        content: [
-                            {
-                                type: 'text',
-                                text: 'Analyze this page for any CAPTCHA elements. Look for: 1) Text input fields with CAPTCHA-related labels or placeholders 2) Images containing text or visual challenges 3) Instructions asking to solve a puzzle or enter text from an image.'
-                            },
-                            {
-                                type: 'image_url',
-                                image_url: {
-                                    url: `data:image/jpeg;base64,${screenshot}`,
-                                    detail: 'high'
-                                }
-                            }
-                        ]
-                    }
-                ],
-                response_format: { type: "json_object" }
-            });
-
-            const analysis = JSON.parse(analysisResponse.choices[0]?.message?.content || '{}');
-            
-            if (!analysis.found) {
-                return false;
-            }
-
-            // If text input is found, try to solve the CAPTCHA
-            if (analysis.inputField) {
-                // Get a closer screenshot of the CAPTCHA area if coordinates are provided
-                let captchaScreenshot = screenshot;
-                if (analysis.coordinates) {
-                    const element = await this.page.$(analysis.selector);
-                    if (element) {
-                        const elementScreenshot = await element.screenshot({
-                            encoding: 'base64',
-                            type: 'jpeg',
-                            quality: 90
-                        });
-                        if (typeof elementScreenshot === 'string') {
-                            captchaScreenshot = elementScreenshot;
-                        }
-                    }
+        const maxAttempts = 3;
+        
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+            try {
+                console.log(`Starting text CAPTCHA solving process (Attempt ${attempt}/${maxAttempts})...`);
+                
+                if (!this.client || !this.page) {
+                    console.log('Missing required dependencies');
+                    return false;
                 }
 
-                // Use GPT-4o to solve the CAPTCHA
-                const solutionResponse = await this.client.chat.completions.create({
+                // Take a full page screenshot
+                const screenshot = await this.page.screenshot({ 
+                    encoding: 'base64',
+                    fullPage: true,
+                    type: 'jpeg',
+                    quality: 90
+                }).catch((error: Error) => {
+                    console.error('Error taking screenshot:', error);
+                    return null;
+                });
+
+                if (!screenshot) {
+                    console.log('Failed to take screenshot, trying next attempt...');
+                    continue;
+                }
+
+                // Single prompt to analyze and solve CAPTCHA
+                const response = await this.client.chat.completions.create({
                     model: 'gpt-4o',
                     messages: [
                         {
                             role: 'system',
-                            content: 'You are an AI designed to solve CAPTCHA challenges. Analyze the image and extract any text, numbers, or solve any visual puzzles present.'
+                            content: 'You are an AI designed to analyze and solve text CAPTCHAs. Return your analysis in JSON format with exactly these fields: {"isTextCaptcha": boolean, "captchaValue": string?, "inputPlaceholder": string?}'
                         },
                         {
                             role: 'user',
                             content: [
                                 {
                                     type: 'text',
-                                    text: `${analysis.instructions || 'Solve this CAPTCHA. If you see text or numbers in the image, provide them exactly as shown. If it\'s a puzzle, describe the solution.'}`
+                                    text: 'Analyze this page. If you find a text CAPTCHA, extract its value and the placeholder text of its input field. Only identify it as a text CAPTCHA if you are highly confident.'
                                 },
                                 {
                                     type: 'image_url',
                                     image_url: {
-                                        url: `data:image/jpeg;base64,${captchaScreenshot}`,
+                                        url: `data:image/jpeg;base64,${screenshot}`,
                                         detail: 'high'
                                     }
                                 }
                             ]
                         }
-                    ]
+                    ],
+                    response_format: { type: "json_object" }
+                }).catch((error: Error) => {
+                    console.error('Error analyzing CAPTCHA:', error);
+                    return null;
                 });
 
-                const solution = solutionResponse.choices[0]?.message?.content;
-                if (!solution) {
-                    return false;
+                if (!response) {
+                    console.log('Failed to get GPT response, trying next attempt...');
+                    continue;
                 }
 
-                // Try to input the solution
-                try {
-                    const inputField = await this.page.$(analysis.selector);
-                    if (inputField) {
-                        await inputField.click();
-                        await this.page.keyboard.type(solution);
-                        
-                        // If submit button is provided, click it
-                        if (analysis.submitSelector) {
-                            const submitButton = await this.page.$(analysis.submitSelector);
-                            if (submitButton) {
-                                await submitButton.click();
-                                await this.delay(2000);
-                            }
-                        } else {
-                            // Try pressing Enter
-                            await this.page.keyboard.press('Enter');
-                            await this.delay(2000);
-                        }
+                const analysis = JSON.parse(response.choices[0]?.message?.content || '{}');
+                console.log(`CAPTCHA analysis (Attempt ${attempt}):`, analysis);
 
-                        // Check if CAPTCHA is still present
-                        const stillHasCaptcha = await this.detectCaptcha();
-                        return !stillHasCaptcha;
+                if (analysis.isTextCaptcha && analysis.captchaValue && analysis.inputPlaceholder) {
+                    // Use TypingWithEnterTool to input the solution
+                    console.log(`Attempting to solve with value: ${analysis.captchaValue}`);
+                    const typingTool = new TypingWithEnterTool(this.page, this.client);
+                    await typingTool.run(analysis.inputPlaceholder, analysis.captchaValue);
+
+                    // Wait briefly and check if CAPTCHA is gone
+                    await this.delay(2000);
+                    const captchaStillPresent = await this.detectCaptcha();
+                    
+                    if (!captchaStillPresent) {
+                        console.log(`Successfully solved CAPTCHA on attempt ${attempt}`);
+                        return true;
+                    } else {
+                        console.log(`CAPTCHA solution failed on attempt ${attempt}, trying next attempt...`);
                     }
-                } catch (error) {
-                    console.error('Error inputting CAPTCHA solution:', error);
-                    return false;
+                } else {
+                    console.log(`No valid CAPTCHA analysis on attempt ${attempt}, trying next attempt...`);
+                }
+
+                // Add a delay between attempts
+                if (attempt < maxAttempts) {
+                    console.log('Waiting before next attempt...');
+                    await this.delay(1000);
+                }
+
+            } catch (error) {
+                console.error(`Text CAPTCHA solving failed on attempt ${attempt}:`, error);
+                if (attempt < maxAttempts) {
+                    console.log('Trying next attempt...');
+                    continue;
                 }
             }
+        }
 
-            return false;
+        console.log(`Failed to solve text CAPTCHA after ${maxAttempts} attempts`);
+        return false;
+    }
+
+    private async solveAmazonTextCaptcha(): Promise<boolean> {
+        try {
+            console.log('Starting Amazon CAPTCHA check...');
+            
+            // Simple domain check
+            const hostname = await this.page?.evaluate(() => window.location.hostname);
+            console.log('Current hostname:', hostname);
+            
+            if (!hostname?.includes('amazon')) {
+                return false;
+            }
+
+            // Check for CAPTCHA input field
+            const captchaInput = await this.page?.$('#captchacharacters');
+            if (!captchaInput) {
+                return false;
+            }
+
+            // Get the CAPTCHA image
+            const captchaImg = await this.page?.$('.a-row.a-text-center img');
+            if (!captchaImg || !this.client) {
+                return false;
+            }
+
+            // Get image source
+            const imgSrc = await this.page?.evaluate((img: Element) => img.getAttribute('src'), captchaImg);
+            if (!imgSrc) {
+                return false;
+            }
+
+            console.log('Found CAPTCHA image, getting solution...');
+
+            // Convert image to base64
+            const response = await fetch(imgSrc);
+            const buffer = await response.arrayBuffer();
+            const base64Image = Buffer.from(buffer).toString('base64');
+
+            // Get solution from GPT-4 Vision
+            const gptResponse = await this.client.chat.completions.create({
+                model: 'gpt-4o',
+                messages: [
+                    {
+                        role: 'system',
+                        content: 'You are an AI designed to solve Amazon text CAPTCHAs. Return ONLY the characters in JSON format: {"captcha": "ABC123"}'
+                    },
+                    {
+                        role: 'user',
+                        content: [
+                            {
+                                type: 'image_url',
+                                image_url: {
+                                    url: `data:image/jpeg;base64,${base64Image}`,
+                                    detail: 'high'
+                                }
+                            }
+                        ]
+                    }
+                ],
+                response_format: { type: "json_object" },
+                max_tokens: 20,
+                temperature: 0
+            });
+
+            const solution = JSON.parse(gptResponse.choices[0]?.message?.content || '{}').captcha?.trim();
+            console.log('Got CAPTCHA solution:', solution);
+
+            if (!solution) {
+                return false;
+            }
+
+            // Input solution
+            await captchaInput.click();
+            await this.page?.keyboard.type(solution, { delay: 50 });
+            await this.delay(500);
+            await this.page?.keyboard.press('Enter');
+            
+            // Wait and check if CAPTCHA is gone
+            await this.delay(2000);
+            const stillHasCaptcha = await this.page?.$('#captchacharacters');
+            
+            return !stillHasCaptcha;
+
         } catch (error) {
-            console.error('Text CAPTCHA solving failed:', error);
+            console.error('Amazon CAPTCHA solving failed:', error);
             return false;
         }
     }
@@ -620,7 +680,14 @@ export class CaptchaSolverTool extends BaseTool {
                 return 'No CAPTCHA detected on the page';
             }
 
-            // Try reCAPTCHA first
+            // Try Amazon text CAPTCHA first
+            console.log('Attempting to solve Amazon text CAPTCHA...');
+            const amazonCaptchaSolved = await this.solveAmazonTextCaptcha();
+            if (amazonCaptchaSolved) {
+                return 'Successfully solved Amazon text CAPTCHA';
+            }
+
+            // Try reCAPTCHA next
             console.log('Attempting to solve reCAPTCHA...');
             const recaptchaSolved = await this.solveReCaptcha();
             if (recaptchaSolved) {
@@ -634,7 +701,7 @@ export class CaptchaSolverTool extends BaseTool {
                 return 'Successfully solved hCaptcha';
             }
 
-            // If neither worked, try the general text/image CAPTCHA solver
+            // If none of the above worked, try the general text/image CAPTCHA solver
             console.log('Attempting to solve text/image CAPTCHA...');
             const textCaptchaSolved = await this.solveTextCaptcha();
             if (textCaptchaSolved) {
