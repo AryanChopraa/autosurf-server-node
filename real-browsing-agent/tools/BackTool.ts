@@ -36,7 +36,9 @@ export class BackTool extends BaseTool {
             });
 
             // Wait a moment for the page to stabilize
-            await this.page.waitForTimeout(500);
+            await this.page.evaluate(() => {
+                return new Promise((resolve) => setTimeout(resolve, 500));
+            });
 
             return 'Successfully navigated back to the previous page';
         } catch (error) {

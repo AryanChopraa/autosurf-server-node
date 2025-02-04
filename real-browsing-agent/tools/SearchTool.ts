@@ -98,11 +98,19 @@ export class SearchTool extends BaseTool {
             // Clear any existing text and focus the input
             await searchInput.click({ clickCount: 3 }); // Select all text
             await searchInput.press('Backspace'); // Clear the field
-            await this.page.waitForTimeout(500); // Small delay for stability
+
+            // Small delay for stability
+            await this.page.evaluate(() => {
+                return new Promise((resolve) => setTimeout(resolve, 500));
+            });
 
             // Type the query with a realistic delay
             await searchInput.type(query, { delay: 100 });
-            await this.page.waitForTimeout(500); // Wait a bit after typing
+            
+            // Wait a bit after typing
+            await this.page.evaluate(() => {
+                return new Promise((resolve) => setTimeout(resolve, 500));
+            });
 
             // Try different methods to submit the search
             try {

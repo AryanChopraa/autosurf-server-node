@@ -49,7 +49,9 @@ export class ScrollTool extends BaseTool {
             });
 
             // Wait for scroll to complete
-            await this.page.waitForTimeout(500);
+            await this.page.evaluate(() => {
+                return new Promise((resolve) => setTimeout(resolve, 500));
+            });
 
             return `Successfully scrolled down by ${Math.round(scrollResult)} pixels`;
         } catch (error) {

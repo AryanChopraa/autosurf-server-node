@@ -108,10 +108,23 @@ export class ClickTool extends BaseTool {
     private async findClickableElement(text: string) {
         if (!text) return null;
 
+        // Helper function to normalize text for comparison
+        const normalizeText = (str: string) => {
+            return str
+                .toLowerCase()
+                .replace(/\s+/g, ' ')  // Replace multiple spaces with single space
+                .replace(/[|›\n]/g, '') // Remove special characters like |, ›, and newlines
+                .replace(/https?:\/\/[^\s]+/g, '') // Remove URLs
+                .replace(/\s+/g, ' ') // Clean up any remaining extra spaces
+                .trim();
+        };
+
+        const searchText = normalizeText(text);
+
         // Try exact match first in highlighted elements
         const highlightedElements = await this.page.$$('.highlighted-element');
         
-        // First pass: Look for exact matches
+        // First pass: Look for normalized exact matches
         for (const element of highlightedElements) {
             const elementText = await this.page.evaluate((el: Element) => {
                 const textContent = el.textContent?.trim();
@@ -123,13 +136,16 @@ export class ClickTool extends BaseTool {
             }, element);
 
             console.log('Element text:', elementText);
-
-            if (elementText && text && elementText.toLowerCase() === text.toLowerCase()) {
-                return element;
+            
+            if (elementText) {
+                const normalizedElementText = normalizeText(elementText);
+                if (normalizedElementText === searchText) {
+                    return element;
+                }
             }
         }
 
-        // Second pass: Look for partial matches in highlighted elements
+        // Second pass: Look for normalized partial matches in highlighted elements
         for (const element of highlightedElements) {
             const elementText = await this.page.evaluate((el: Element) => {
                 const textContent = el.textContent?.trim();
@@ -140,8 +156,11 @@ export class ClickTool extends BaseTool {
                 return textContent || value || ariaLabel || title || placeholder || '';
             }, element);
 
-            if (elementText && text && elementText.toLowerCase().includes(text.toLowerCase())) {
-                return element;
+            if (elementText) {
+                const normalizedElementText = normalizeText(elementText);
+                if (normalizedElementText.includes(searchText) || searchText.includes(normalizedElementText)) {
+                    return element;
+                }
             }
         }
 
@@ -158,7 +177,7 @@ export class ClickTool extends BaseTool {
             `span[role="button"]:not([aria-hidden="true"]):not(.hidden):not(.invisible)`
         ];
 
-        // First try exact matches in standard selectors
+        // First try normalized exact matches in standard selectors
         for (const selector of selectors) {
             const elements = await this.page.$$(selector);
             for (const element of elements) {
@@ -171,13 +190,16 @@ export class ClickTool extends BaseTool {
                     return textContent || value || ariaLabel || title || placeholder || '';
                 }, element);
 
-                if (elementText && text && elementText.toLowerCase() === text.toLowerCase()) {
-                    return element;
+                if (elementText) {
+                    const normalizedElementText = normalizeText(elementText);
+                    if (normalizedElementText === searchText) {
+                        return element;
+                    }
                 }
             }
         }
 
-        // Finally, try partial matches in standard selectors
+        // Finally, try normalized partial matches in standard selectors
         for (const selector of selectors) {
             const elements = await this.page.$$(selector);
             for (const element of elements) {
@@ -190,8 +212,11 @@ export class ClickTool extends BaseTool {
                     return textContent || value || ariaLabel || title || placeholder || '';
                 }, element);
 
-                if (elementText && text && elementText.toLowerCase().includes(text.toLowerCase())) {
-                    return element;
+                if (elementText) {
+                    const normalizedElementText = normalizeText(elementText);
+                    if (normalizedElementText.includes(searchText) || searchText.includes(normalizedElementText)) {
+                        return element;
+                    }
                 }
             }
         }

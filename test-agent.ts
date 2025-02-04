@@ -12,7 +12,7 @@ async function main() {
         console.log('Browser agent initialized successfully');
 
         // Define the task
-        const task = "go to google.com and search for apple and scroll down to last of the page and tell what is the last article on the page";
+        const task = "go to amazon.com and search for apple iphone click the first link and tell me about the product and then scroll down to tell me about the product details and the reviews you see";
 
         console.log('Starting task:', task);
 

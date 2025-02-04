@@ -13,8 +13,6 @@ import { ScrollTool } from './tools/ScrollTool';
 import { BackTool } from './tools/BackTool';
 import { 
     HIGHLIGHT_ELEMENTS_SCRIPT, 
-    HIGHLIGHT_TEXT_FIELDS_SCRIPT, 
-    HIGHLIGHT_DROPDOWNS_SCRIPT, 
     REMOVE_HIGHLIGHTS_SCRIPT 
 } from './utils/HighlightScript';
 import fs from 'fs';
@@ -162,41 +160,41 @@ class AIBrowserAgent {
         await this.page.evaluate(HIGHLIGHT_ELEMENTS_SCRIPT);
     }
 
-    private async highlightTextFields() {
-        if (!this.page) return;
-        await this.page.evaluate(HIGHLIGHT_TEXT_FIELDS_SCRIPT);
-    }
+    // private async highlightTextFields() {
+    //     if (!this.page) return;
+    //     await this.page.evaluate(HIGHLIGHT_TEXT_FIELDS_SCRIPT);
+    // }
 
-    private async highlightDropdowns() {
-        if (!this.page) return;
-        await this.page.evaluate(HIGHLIGHT_DROPDOWNS_SCRIPT);
-    }
+    // private async highlightDropdowns() {
+    //     if (!this.page) return;
+    //     await this.page.evaluate(HIGHLIGHT_DROPDOWNS_SCRIPT);
+    // }
 
     private async removeHighlights() {
         if (!this.page) return;
         await this.page.evaluate(REMOVE_HIGHLIGHTS_SCRIPT);
     }
 
-    private async getHighlightedElementTexts(): Promise<string[]> {
-        if (!this.page) return [];
-        return await this.page.evaluate(() => {
-            const elements = document.querySelectorAll('.highlighted-element');
-            return Array.from(elements).map(el => el.textContent || '').filter(text => text.trim() !== '');
-        });
-    }
+    // private async getHighlightedElementTexts(): Promise<string[]> {
+    //     if (!this.page) return [];
+    //     return await this.page.evaluate(() => {
+    //         const elements = document.querySelectorAll('.highlighted-element');
+    //         return Array.from(elements).map(el => el.textContent || '').filter(text => text.trim() !== '');
+    //     });
+    // }
 
-    private async getDropdownValues(): Promise<Record<string, string[]>> {
-        if (!this.page) return {};
-        return await this.page.evaluate(() => {
-            const dropdowns = document.querySelectorAll('select.highlighted-element');
-            const values: Record<string, string[]> = {};
-            dropdowns.forEach((dropdown, index) => {
-                const options = Array.from(dropdown.querySelectorAll('option'));
-                values[String(index + 1)] = options.map(opt => opt.textContent || '').slice(0, 10);
-            });
-            return values;
-        });
-    }
+    // private async getDropdownValues(): Promise<Record<string, string[]>> {
+    //     if (!this.page) return {};
+    //     return await this.page.evaluate(() => {
+    //         const dropdowns = document.querySelectorAll('select.highlighted-element');
+    //         const values: Record<string, string[]> = {};
+    //         dropdowns.forEach((dropdown, index) => {
+    //             const options = Array.from(dropdown.querySelectorAll('option'));
+    //             values[String(index + 1)] = options.map(opt => opt.textContent || '').slice(0, 10);
+    //         });
+    //         return values;
+    //     });
+    // }
 
     private removeUnicode(text: string): string {
         return text.replace(/[^\x00-\x7F]+/g, '');
@@ -347,7 +345,7 @@ class AIBrowserAgent {
                     result = await this.captchaSolver.run();
                     break;
                 
-                case 'handle_scroll':
+                case 'scroll_down':
                     if (!this.scrollTool) throw new Error('Scroll tool not initialized');
                     result = await this.scrollTool.run();
                     break;
