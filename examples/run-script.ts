@@ -1,33 +1,42 @@
 import { ScriptRunnerAgent } from '../real-browsing-agent/script-runner-agent';
+import type { ScriptCommand } from '../types';
 
 async function main() {
-    // Example script to run
-    const scriptToRun = `
-    const browser = await puppeteer.launch({
-        headless: false,
-        args: ['--window-size=1440,900']
-    });
-    const page = await browser.newPage();
-    await page.setViewport({ width: 1440, height: 900 });
-
-    await page.goto('https://www.amazon.com');
-    await page.waitForTimeout(1000);
-    await page.type('[placeholder="Search Amazon"]', 'detergent');
-    await page.keyboard.press('Enter');
-    await page.waitForTimeout(1000);
-    `;
-
-    const runner = new ScriptRunnerAgent();
+    let runner: ScriptRunnerAgent | null = null;
     
     try {
+        // Initialize the browser
+        runner = new ScriptRunnerAgent();
         await runner.initialize();
-        await runner.executeScript(scriptToRun);
-        console.log('Script execution completed');
+        
+        // Define commands to execute
+        const commands: ScriptCommand[] = [
+            {
+                type: 'navigation',
+                url: 'https://www.amazon.com'
+            },
+            {
+                type: 'search',
+                query: 'detergent'
+            }
+        ];
+        
+        // Execute the commands
+        await runner.executeCommands(commands);
+        
+        // Keep the browser open for 10 seconds to see the results
+        await new Promise(resolve => setTimeout(resolve, 10000));
+        
     } catch (error) {
-        console.error('Error running script:', error);
+        console.error('Test failed:', error);
     } finally {
-        await runner.close();
+        if (runner) {
+            await runner.close();
+        }
     }
 }
 
-main().catch(console.error); 
+// Run the test
+if (require.main === module) {
+    main().catch(console.error);
+} 
