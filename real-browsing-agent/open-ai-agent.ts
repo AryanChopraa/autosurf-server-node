@@ -48,6 +48,12 @@ class AIBrowserAgent {
     private SCREENSHOTS_DIR = "screenshots";
     private prev_message = "";
     private sharedState: Map<string, string> = new Map();
+    private executedCommands: Array<{
+        command: string;
+        selector?: string;
+        value?: string;
+        url?: string;
+    }> = [];
 
     constructor() {
         this.client = new OpenAI({
@@ -291,15 +297,7 @@ class AIBrowserAgent {
         console.log("The explanation is:", parsedArgs.explanation);
         console.log("The action is:", parsedArgs.action);
 
-
         try {
-            // Use less strict network idle and shorter timeout
-            // await this.page.waitForNavigation({ 
-            //     waitUntil: 'networkidle2',
-            //     timeout: 2000  // Further reduced from 3000 to 2000
-            // }).catch(() => {});
-
-            // Initial CAPTCHA check
             const hasCaptcha = await this.detectCaptcha();
             console.log('🔒 CAPTCHA detected:', hasCaptcha);
 
@@ -318,61 +316,82 @@ class AIBrowserAgent {
                 case 'handle_url':
                     if (!this.navigationTool) throw new Error('Navigation tool not initialized');
                     result = await this.navigationTool.run(parsedArgs.url);
+                    this.executedCommands.push({
+                        command: 'goto',
+                        url: parsedArgs.url
+                    });
                     break;
                 
                 case 'handle_search':
                     if (!this.searchTool) throw new Error('Search tool not initialized');
                     result = await this.searchTool.run(parsedArgs.query);
+                    this.executedCommands.push({
+                        command: 'type',
+                        selector: '[name="q"]',
+                        value: parsedArgs.query
+                    });
                     break;
                 
                 case 'handle_click':
                     if (!this.clickTool) throw new Error('Click tool not initialized');
                     result = await this.clickTool.run(parsedArgs.identifier);
+                    this.executedCommands.push({
+                        command: 'click',
+                        selector: parsedArgs.identifier
+                    });
                     break;
                 
                 case 'handle_typing':
                     if (!this.typingTool) throw new Error('Typing tool not initialized');
                     result = await this.typingTool.run(parsedArgs.placeholder_value, parsedArgs.text);
+                    this.executedCommands.push({
+                        command: 'type',
+                        selector: `[placeholder="${parsedArgs.placeholder_value}"]`,
+                        value: parsedArgs.text
+                    });
                     break;
 
                 case 'handle_typing_with_enter':
                     if (!this.typingWithEnterTool) throw new Error('Typing with Enter tool not initialized');
                     result = await this.typingWithEnterTool.run(parsedArgs.placeholder_value, parsedArgs.text);
+                    this.executedCommands.push({
+                        command: 'typeAndEnter',
+                        selector: `[placeholder="${parsedArgs.placeholder_value}"]`,
+                        value: parsedArgs.text
+                    });
                     break;
                 
                 case 'handle_captcha':
                     if (!this.captchaSolver) throw new Error('Captcha solver not initialized');
                     result = await this.captchaSolver.run();
+                    this.executedCommands.push({
+                        command: 'solveCaptcha'
+                    });
                     break;
                 
                 case 'scroll_down':
                     if (!this.scrollTool) throw new Error('Scroll tool not initialized');
                     result = await this.scrollTool.run();
+                    this.executedCommands.push({
+                        command: 'scroll'
+                    });
                     break;
                 
                 case 'handle_back':
                     if (!this.backTool) throw new Error('Back tool not initialized');
                     result = await this.backTool.run();
+                    this.executedCommands.push({
+                        command: 'back'
+                    });
                     break;
                 
                 default:
                     throw new Error(`Unknown tool: ${name}`);
             }
 
-            // Check for CAPTCHA after action
-            // const postActionCaptcha = await this.detectCaptcha();
-            // if (postActionCaptcha && this.captchaSolver) {
-            //     console.log('🔒 CAPTCHA detected after action');
-            //     const solved = await this.captchaSolver.run();
-            //     if (!solved.includes('Success')) {
-            //         throw new Error('Failed to solve post-action CAPTCHA');
-            //     }
-            // }
-
-            // Only wait for DOM content to be available, with shorter timeout
             await this.page.waitForFunction(() => {
                 return document.readyState !== 'loading' && document.body != null;
-            }, { timeout: 1000 }).catch(() => {}); // Reduced timeout to 1 second
+            }, { timeout: 1000 }).catch(() => {});
 
             return await this.capturePageState(stepCount);
 
@@ -469,6 +488,48 @@ class AIBrowserAgent {
         }
     }
 
+    // Add method to get executed commands
+    public getExecutedCommands(): string {
+        let scriptContent = `const puppeteer = require('puppeteer');\n\n`;
+        scriptContent += `(async () => {
+    const browser = await puppeteer.launch({
+        headless: false,
+        args: ['--window-size=1440,900']
+    });
+    const page = await browser.newPage();
+    await page.setViewport({ width: 1440, height: 900 });\n\n`;
+
+        for (const cmd of this.executedCommands) {
+            switch (cmd.command) {
+                case 'goto':
+                    scriptContent += `    await page.goto('${cmd.url}');\n`;
+                    break;
+                case 'click':
+                    scriptContent += `    await page.click('${cmd.selector}');\n`;
+                    break;
+                case 'type':
+                    scriptContent += `    await page.type('${cmd.selector}', '${cmd.value}');\n`;
+                    break;
+                case 'typeAndEnter':
+                    scriptContent += `    await page.type('${cmd.selector}', '${cmd.value}');\n`;
+                    scriptContent += `    await page.keyboard.press('Enter');\n`;
+                    break;
+                case 'scroll':
+                    scriptContent += `    await page.evaluate(() => window.scrollBy(0, 500));\n`;
+                    break;
+                case 'back':
+                    scriptContent += `    await page.goBack();\n`;
+                    break;
+            }
+            scriptContent += `    await page.waitForTimeout(1000);\n`;
+        }
+
+        scriptContent += `    // await browser.close();\n`;
+        scriptContent += `})();`;
+
+        return scriptContent;
+    }
+
     async performTask(task: string) {
         if (!this.page) throw new Error('Browser not initialized');
         console.log('\n=== 🚀 Starting New Task ===');
@@ -563,6 +624,10 @@ class AIBrowserAgent {
             }
         }
 
+        // At the end of performTask, print the executed commands
+        console.log('\n=== 📝 Executed Commands ===');
+        console.log(this.getExecutedCommands());
+        
         if (stepCount >= MAX_STEPS) {
             console.log('⚠️ Maximum steps reached. Task may not be complete.');
         }
