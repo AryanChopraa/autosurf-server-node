@@ -1,26 +1,29 @@
 import * as puppeteer from 'puppeteer';
 import OpenAI from 'openai';
 import { CaptchaSolverTool } from './tools/CaptchaSolverTool';
-
-interface ElementInfo {
-    isVisible: boolean;
-    details: {
-        tagName: string;
-        id: string;
-        className: string;
-        src: string;
-        display: string;
-        visibility: string;
-        width: number;
-        height: number;
-    };
-}
+import { NavigationTool } from './tools/NavigationTool';
+import { SearchTool } from './tools/SearchTool';
+import { ClickTool } from './tools/ClickTool';
+import { TypingTool } from './tools/TypingTool';
+import { TypingWithEnterTool } from './tools/TypingWithEnterTool';
+import { ScrollTool } from './tools/ScrollTool';
+import { BackTool } from './tools/BackTool';
+import { ScriptCommand, ElementInfo } from '../types';
 
 export class ScriptRunnerAgent {
     private browser: puppeteer.Browser | null = null;
     private page: puppeteer.Page | null = null;
     private client: OpenAI;
+    
+    // Tools
+    private navigationTool: NavigationTool | null = null;
+    private searchTool: SearchTool | null = null;
+    private clickTool: ClickTool | null = null;
+    private typingTool: TypingTool | null = null;
+    private typingWithEnterTool: TypingWithEnterTool | null = null;
     private captchaSolver: CaptchaSolverTool | null = null;
+    private scrollTool: ScrollTool | null = null;
+    private backTool: BackTool | null = null;
 
     constructor() {
         // Load environment variables
@@ -50,10 +53,18 @@ export class ScriptRunnerAgent {
         await this.page.setUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36');
         
         if (this.page) {
+            // Initialize all tools
+            this.navigationTool = new NavigationTool(this.page, this.client);
+            this.searchTool = new SearchTool(this.page, this.client);
+            this.clickTool = new ClickTool(this.page, this.client);
+            this.typingTool = new TypingTool(this.page, this.client);
+            this.typingWithEnterTool = new TypingWithEnterTool(this.page, this.client);
             this.captchaSolver = new CaptchaSolverTool(this.page, this.client);
+            this.scrollTool = new ScrollTool(this.page, this.client);
+            this.backTool = new BackTool(this.page, this.client);
         }
         
-        console.log('Browser started successfully');
+        console.log('Browser and tools initialized successfully');
     }
 
     private async detectCaptcha(): Promise<boolean> {
@@ -133,14 +144,10 @@ export class ScriptRunnerAgent {
         return true;
     }
 
-    async executeScript(scriptContent: string) {
+    async executeCommands(commands: ScriptCommand[]) {
         if (!this.page) throw new Error('Browser not initialized');
         
         try {
-            // Parse the script to extract individual commands
-            const commands = this.parseScriptCommands(scriptContent);
-            
-            // Execute each command with CAPTCHA checking
             for (const command of commands) {
                 // Check for CAPTCHA before each action
                 const captchaSolved = await this.handleCaptchaIfPresent();
@@ -148,96 +155,82 @@ export class ScriptRunnerAgent {
                     throw new Error('Failed to solve CAPTCHA');
                 }
 
-                // Execute the command
-                console.log(`Executing command: ${command.type}`, command.params);
+                // Execute the command using the appropriate tool
+                console.log(`Executing command: ${command.type}`, command);
                 await this.executeCommand(command);
                 
                 // Wait for any navigation or network activity to settle
                 await new Promise(resolve => setTimeout(resolve, 1000));
             }
             
-            console.log('Script execution completed successfully');
+            console.log('Commands execution completed successfully');
             
         } catch (error) {
-            console.error('Script execution failed:', error);
+            console.error('Commands execution failed:', error);
             throw error;
         }
     }
 
-    private parseScriptCommands(scriptContent: string): Array<{
-        type: string;
-        params: any;
-    }> {
-        const commands: Array<{ type: string; params: any }> = [];
-        
-        // Extract commands using regex
-        const commandRegex = /await page\.(\w+)\((.*)\);/g;
-        let match;
-        
-        while ((match = commandRegex.exec(scriptContent)) !== null) {
-            const [_, commandType, argsString] = match;
-            
-            // Parse the arguments
-            let params;
-            try {
-                // Handle different argument formats
-                if (argsString.includes('=>')) {
-                    // Handle function arguments (like in evaluate)
-                    params = { fn: argsString };
-                } else {
-                    // Handle regular arguments
-                    params = argsString
-                        .split(',')
-                        .map(arg => {
-                            try {
-                                return JSON.parse(arg.trim());
-                            } catch {
-                                // If JSON.parse fails, return the string without quotes
-                                return arg.trim().replace(/['"]/g, '');
-                            }
-                        });
-                }
-            } catch (error) {
-                console.warn(`Failed to parse arguments for command ${commandType}:`, error);
-                params = [];
-            }
-            
-            commands.push({ type: commandType, params });
-        }
-        
-        return commands;
-    }
-
-    private async executeCommand(command: { type: string; params: any }) {
+    private async executeCommand(command: ScriptCommand) {
         if (!this.page) throw new Error('Page not initialized');
         
-        switch (command.type) {
-            case 'goto':
-                await this.page.goto(command.params[0]);
-                break;
-                
-            case 'click':
-                await this.page.click(command.params[0]);
-                break;
-                
-            case 'type':
-                await this.page.type(command.params[0], command.params[1]);
-                break;
-                
-            case 'keyboard.press':
-                await this.page.keyboard.press(command.params[0]);
-                break;
-                
-            case 'evaluate':
-                await this.page.evaluate(command.params.fn);
-                break;
-                
-            case 'waitForTimeout':
-                await new Promise(resolve => setTimeout(resolve, command.params[0]));
-                break;
-                
-            default:
-                throw new Error(`Unknown command type: ${command.type}`);
+        try {
+            switch (command.type) {
+                case 'navigation':
+                    if (!this.navigationTool) throw new Error('Navigation tool not initialized');
+                    if (command.url) {
+                        await this.navigationTool.run(command.url);
+                    }
+                    break;
+                    
+                case 'click':
+                    if (!this.clickTool) throw new Error('Click tool not initialized');
+                    if (command.identifier) {
+                        await this.clickTool.run(command.identifier);
+                    }
+                    break;
+                    
+                case 'type':
+                case 'typeAndEnter':
+                    const tool = command.type === 'type' ? this.typingTool : this.typingWithEnterTool;
+                    if (!tool) throw new Error(`${command.type} tool not initialized`);
+                    if (command.placeholder_value && command.text) {
+                        await tool.run(command.placeholder_value, command.text);
+                    }
+                    break;
+                    
+                case 'search':
+                    if (!this.searchTool) throw new Error('Search tool not initialized');
+                    if (command.query) {
+                        await this.searchTool.run(command.query);
+                    }
+                    break;
+
+                case 'scroll':
+                    if (!this.scrollTool) throw new Error('Scroll tool not initialized');
+                    await this.scrollTool.run();
+                    break;
+
+                case 'back':
+                    if (!this.backTool) throw new Error('Back tool not initialized');
+                    await this.backTool.run();
+                    break;
+
+                case 'solveCaptcha':
+                    if (!this.captchaSolver) throw new Error('Captcha solver not initialized');
+                    await this.captchaSolver.run();
+                    break;
+                    
+                default:
+                    throw new Error(`Unknown command type: ${command.type}`);
+            }
+            
+            // Add a small delay after each command for stability
+            await new Promise(resolve => setTimeout(resolve, 500));
+            
+        } catch (error) {
+            console.error(`Failed to execute command ${command.type}:`, error);
+            throw error;
         }
     }
 

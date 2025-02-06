@@ -33,6 +33,7 @@ export const getUserApiKey = controllerHandler<AuthenticatedRequest>(async (req,
   }
 
   const apiKey = await getApiKey(req.user.id);
+  console.log("req.user.idreq.user.id");
   
   if (!apiKey) {
     throw new AppError('No API key found', 404);

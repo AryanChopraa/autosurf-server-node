@@ -1,8 +1,9 @@
 import { Request, Response, NextFunction } from 'express';
 import { createClient } from '@supabase/supabase-js';
-import { config } from '../config';
+import { config } from '../config/index';
 import { controllerHandler } from './controllerHandler';
 import { AppError } from './errorHandler';
+import { SupabaseClient } from '@supabase/supabase-js';
 
 const supabase = createClient(config.supabaseUrl!, config.supabaseKey!);
 
@@ -12,6 +13,7 @@ export interface AuthenticatedRequest extends Request {
     email: string;
     [key: string]: any;
   };
+  supabase?: SupabaseClient;
 }
 
 const authenticate = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
@@ -27,7 +29,25 @@ const authenticate = async (req: AuthenticatedRequest, res: Response, next: Next
     throw new AppError('No token provided', 401);
   }
 
-  const { data: { user }, error } = await supabase.auth.getUser(token);
+  // Create a new Supabase client with the auth token
+  const authenticatedClient = createClient(
+    config.supabaseUrl!,
+    config.supabaseKey!,
+    {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+        detectSessionInUrl: false,
+      },
+      global: {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      }
+    }
+  );
+
+  const { data: { user }, error } = await authenticatedClient.auth.getUser();
 
   if (error || !user) {
     throw new AppError('Invalid token', 401);
@@ -44,6 +64,9 @@ const authenticate = async (req: AuthenticatedRequest, res: Response, next: Next
       Object.entries(user).filter(([key]) => !['id', 'email'].includes(key))
     )
   };
+
+  // Attach the authenticated client to the request
+  req.supabase = authenticatedClient;
   
   next();
 };

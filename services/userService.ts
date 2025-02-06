@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { config } from '../config';
+import { config } from '../config/index';
 import { AppError } from '../middleware/errorHandler';
 
 const supabase = createClient(config.supabaseUrl!, config.supabaseKey!);

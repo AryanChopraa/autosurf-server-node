@@ -15,6 +15,7 @@ import {
     HIGHLIGHT_ELEMENTS_SCRIPT, 
     REMOVE_HIGHLIGHTS_SCRIPT 
 } from './utils/HighlightScript';
+import { ScriptCommand } from '../types';
 import fs from 'fs';
 
 dotenv.config();
@@ -44,31 +45,21 @@ class AIBrowserAgent {
     private captchaSolver: CaptchaSolverTool | null = null;
     private scrollTool: ScrollTool | null = null;
     private backTool: BackTool | null = null;
-    private SCREENSHOT_FILE_NAME = "screenshot.jpg";
-    private SCREENSHOTS_DIR = "screenshots";
     private prev_message = "";
     private sharedState: Map<string, string> = new Map();
-    private executedCommands: Array<{
-        command: string;
-        selector?: string;
-        value?: string;
-        url?: string;
-    }> = [];
+    private executedCommands: ScriptCommand[] = [];
+    private steps: { number: number; action: string; explanation: string; }[] = [];
 
     constructor() {
         this.client = new OpenAI({
             apiKey: process.env.OPENAI_API_KEY,
         });
-        // Create screenshots directory if it doesn't exist
-        if (!fs.existsSync(this.SCREENSHOTS_DIR)) {
-            fs.mkdirSync(this.SCREENSHOTS_DIR);
-        }
     }
 
     async initialize() {
         console.log('Starting browser...');
         this.browser = await puppeteer.launch({
-            headless: false,
+            headless: true,
             args: [
                 '--window-size=1440,900',
                 '--disable-web-security',
@@ -109,54 +100,10 @@ class AIBrowserAgent {
         }
 
         this.prev_message = filteredMessage;
-         if (message) {
+        if (message) {
             await this.removeHighlights();
             await this.highlightClickableElements();
         }
-
-
-        // if (message.toLowerCase().includes("[send screenshot]")) {
-        //     await this.removeHighlights();
-        //     await this.takeScreenshot();
-        //     return "Here is the screenshot of the current web page:";
-        // }
-
-        // if (message.toLowerCase().includes("[highlight clickable elements]")) {
-        //     await this.highlightClickableElements();
-        //     await this.takeScreenshot();
-
-        //     const elementTexts = await this.getHighlightedElementTexts();
-        //     const elementTextsFormatted = this.formatElementTexts(elementTexts);
-
-        //     return `Here is the screenshot of the current web page with highlighted clickable elements. \n\n` +
-        //            `Texts of the elements are: ${elementTextsFormatted}.\n\n` +
-        //            `Elements without text are not shown, but are available on screenshot. \n` +
-        //            `Please make sure to analyze the screenshot to find the clickable element you need to click on.`;
-        // }
-
-        // if (message.toLowerCase().includes("[highlight text fields]")) {
-        //     await this.highlightTextFields();
-        //     await this.takeScreenshot();
-
-        //     const elementTexts = await this.getHighlightedElementTexts();
-        //     const elementTextsFormatted = this.formatElementTexts(elementTexts);
-
-        //     return `Here is the screenshot of the current web page with highlighted text fields: \n` +
-        //            `Texts of the elements are: ${elementTextsFormatted}.\n` +
-        //            `Please make sure to analyze the screenshot to find the text field you need to fill.`;
-        // }
-
-        // if (message.toLowerCase().includes("[highlight dropdowns]")) {
-        //     await this.highlightDropdowns();
-        //     await this.takeScreenshot();
-
-        //     const dropdownValues = await this.getDropdownValues();
-        //     const dropdownValuesFormatted = this.formatDropdownValues(dropdownValues);
-
-        //     return `Here is the screenshot with highlighted dropdowns. \n` +
-        //            `Selector values are: ${dropdownValuesFormatted}.\n` +
-        //            `Please make sure to analyze the screenshot to find the dropdown you need to select.`;
-        // }
 
         return message;
     }
@@ -166,41 +113,10 @@ class AIBrowserAgent {
         await this.page.evaluate(HIGHLIGHT_ELEMENTS_SCRIPT);
     }
 
-    // private async highlightTextFields() {
-    //     if (!this.page) return;
-    //     await this.page.evaluate(HIGHLIGHT_TEXT_FIELDS_SCRIPT);
-    // }
-
-    // private async highlightDropdowns() {
-    //     if (!this.page) return;
-    //     await this.page.evaluate(HIGHLIGHT_DROPDOWNS_SCRIPT);
-    // }
-
     private async removeHighlights() {
         if (!this.page) return;
         await this.page.evaluate(REMOVE_HIGHLIGHTS_SCRIPT);
     }
-
-    // private async getHighlightedElementTexts(): Promise<string[]> {
-    //     if (!this.page) return [];
-    //     return await this.page.evaluate(() => {
-    //         const elements = document.querySelectorAll('.highlighted-element');
-    //         return Array.from(elements).map(el => el.textContent || '').filter(text => text.trim() !== '');
-    //     });
-    // }
-
-    // private async getDropdownValues(): Promise<Record<string, string[]>> {
-    //     if (!this.page) return {};
-    //     return await this.page.evaluate(() => {
-    //         const dropdowns = document.querySelectorAll('select.highlighted-element');
-    //         const values: Record<string, string[]> = {};
-    //         dropdowns.forEach((dropdown, index) => {
-    //             const options = Array.from(dropdown.querySelectorAll('option'));
-    //             values[String(index + 1)] = options.map(opt => opt.textContent || '').slice(0, 10);
-    //         });
-    //         return values;
-    //     });
-    // }
 
     private removeUnicode(text: string): string {
         return text.replace(/[^\x00-\x7F]+/g, '');
@@ -225,31 +141,22 @@ class AIBrowserAgent {
             .join(', ');
     }
 
-    private async takeScreenshot(): Promise<void> {
-        if (!this.page) return;
-        // Clean up previous screenshot if it exists
-        if (fs.existsSync(this.SCREENSHOT_FILE_NAME)) {
-            fs.unlinkSync(this.SCREENSHOT_FILE_NAME);
-        }
-        const screenshot = await this.page.screenshot({ encoding: 'base64' });
-        if (typeof screenshot === 'string') {
-            const buffer = Buffer.from(screenshot, 'base64');
-            fs.writeFileSync(this.SCREENSHOT_FILE_NAME, buffer);
-        }
-    }
-
     private async createResponseContent(responseText: string): Promise<any[]> {
-        const fileContent = fs.readFileSync(this.SCREENSHOT_FILE_NAME);
-        const file = new File([fileContent], this.SCREENSHOT_FILE_NAME, { type: 'image/jpeg' });
+        const screenshot = await this.page?.screenshot({ 
+            encoding: 'base64',
+            type: 'jpeg',
+            quality: 80
+        });
+
+        if (!screenshot) {
+            return [{ type: "text", text: responseText }];
+        }
+
+        const file = new File([Buffer.from(screenshot, 'base64')], 'screenshot.jpg', { type: 'image/jpeg' });
         const fileId = await this.client.files.create({
             file,
             purpose: "vision",
         }).then(response => response.id);
-
-        // Clean up the screenshot after uploading
-        if (fs.existsSync(this.SCREENSHOT_FILE_NAME)) {
-            fs.unlinkSync(this.SCREENSHOT_FILE_NAME);
-        }
 
         return [
             { type: "text", text: responseText },
@@ -269,18 +176,10 @@ class AIBrowserAgent {
 
             const screenshot = await this.page.screenshot({ 
                 encoding: 'base64',
-                fullPage: false, // Only capture visible portion
+                fullPage: false,
                 type: 'jpeg',
-                quality: 100 // Maximum quality
+                quality: 80
             });
-            
-            if (typeof screenshot === 'string' && stepCount > 1) {
-                // Save screenshot with step number
-                const stepScreenshotPath = `${this.SCREENSHOTS_DIR}/screenshot-step${stepCount}.jpg`;
-                const buffer = Buffer.from(screenshot, 'base64');
-                fs.writeFileSync(stepScreenshotPath, buffer);
-                console.log(`Screenshot saved: ${stepScreenshotPath}`);
-            }
             
             return typeof screenshot === 'string' ? screenshot : null;
         } catch (e) {
@@ -308,7 +207,6 @@ class AIBrowserAgent {
                     throw new Error('Failed to solve initial CAPTCHA');
                 }
             }
-            this.highlightClickableElements();
 
             // Execute the action using the appropriate tool
             let result: string;
@@ -317,7 +215,7 @@ class AIBrowserAgent {
                     if (!this.navigationTool) throw new Error('Navigation tool not initialized');
                     result = await this.navigationTool.run(parsedArgs.url);
                     this.executedCommands.push({
-                        command: 'goto',
+                        type: 'navigation',
                         url: parsedArgs.url
                     });
                     break;
@@ -326,9 +224,8 @@ class AIBrowserAgent {
                     if (!this.searchTool) throw new Error('Search tool not initialized');
                     result = await this.searchTool.run(parsedArgs.query);
                     this.executedCommands.push({
-                        command: 'type',
-                        selector: '[name="q"]',
-                        value: parsedArgs.query
+                        type: 'search',
+                        query: parsedArgs.query
                     });
                     break;
                 
@@ -336,28 +233,20 @@ class AIBrowserAgent {
                     if (!this.clickTool) throw new Error('Click tool not initialized');
                     result = await this.clickTool.run(parsedArgs.identifier);
                     this.executedCommands.push({
-                        command: 'click',
-                        selector: parsedArgs.identifier
+                        type: 'click',
+                        identifier: parsedArgs.identifier
                     });
                     break;
                 
                 case 'handle_typing':
-                    if (!this.typingTool) throw new Error('Typing tool not initialized');
-                    result = await this.typingTool.run(parsedArgs.placeholder_value, parsedArgs.text);
-                    this.executedCommands.push({
-                        command: 'type',
-                        selector: `[placeholder="${parsedArgs.placeholder_value}"]`,
-                        value: parsedArgs.text
-                    });
-                    break;
-
                 case 'handle_typing_with_enter':
-                    if (!this.typingWithEnterTool) throw new Error('Typing with Enter tool not initialized');
-                    result = await this.typingWithEnterTool.run(parsedArgs.placeholder_value, parsedArgs.text);
+                    const tool = name === 'handle_typing' ? this.typingTool : this.typingWithEnterTool;
+                    if (!tool) throw new Error(`${name} tool not initialized`);
+                    result = await tool.run(parsedArgs.placeholder_value, parsedArgs.text);
                     this.executedCommands.push({
-                        command: 'typeAndEnter',
-                        selector: `[placeholder="${parsedArgs.placeholder_value}"]`,
-                        value: parsedArgs.text
+                        type: name === 'handle_typing' ? 'type' : 'typeAndEnter',
+                        placeholder_value: parsedArgs.placeholder_value,
+                        text: parsedArgs.text
                     });
                     break;
                 
@@ -365,7 +254,7 @@ class AIBrowserAgent {
                     if (!this.captchaSolver) throw new Error('Captcha solver not initialized');
                     result = await this.captchaSolver.run();
                     this.executedCommands.push({
-                        command: 'solveCaptcha'
+                        type: 'solveCaptcha'
                     });
                     break;
                 
@@ -373,7 +262,7 @@ class AIBrowserAgent {
                     if (!this.scrollTool) throw new Error('Scroll tool not initialized');
                     result = await this.scrollTool.run();
                     this.executedCommands.push({
-                        command: 'scroll'
+                        type: 'scroll'
                     });
                     break;
                 
@@ -381,7 +270,7 @@ class AIBrowserAgent {
                     if (!this.backTool) throw new Error('Back tool not initialized');
                     result = await this.backTool.run();
                     this.executedCommands.push({
-                        command: 'back'
+                        type: 'back'
                     });
                     break;
                 
@@ -488,113 +377,18 @@ class AIBrowserAgent {
         }
     }
 
-    // Add method to get executed commands
-    public getExecutedCommands(): string {
-        let scriptContent = `const puppeteer = require('puppeteer');\n\n`;
-        scriptContent += `(async () => {
-    const browser = await puppeteer.launch({
-        headless: false,
-        args: ['--window-size=1440,900']
-    });
-    const page = await browser.newPage();
-    await page.setViewport({ width: 1440, height: 900 });\n\n`;
-
-        for (const cmd of this.executedCommands) {
-            switch (cmd.command) {
-                case 'goto':
-                    scriptContent += `    await page.goto('${cmd.url}');\n`;
-                    break;
-                case 'click':
-                    if (cmd.selector) {
-                        scriptContent += `    await page.click('${cmd.selector}');\n`;
-                    }
-                    break;
-                case 'type':
-                    if (cmd.selector && cmd.value) {
-                        // Use a more robust selector that matches what TypingTool uses
-                        scriptContent += `    await page.waitForSelector('input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([aria-hidden="true"]):not(.hidden):not(.invisible), textarea:not([aria-hidden="true"]):not(.hidden):not(.invisible)');\n`;
-                        scriptContent += `    const inputField = await page.$$eval('input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([aria-hidden="true"]):not(.hidden):not(.invisible), textarea:not([aria-hidden="true"]):not(.hidden):not(.invisible)', (elements, searchText) => {
-            return elements.find(el => {
-                const placeholder = el.placeholder?.trim();
-                const label = el.labels?.[0]?.textContent?.trim();
-                const ariaLabel = el.getAttribute('aria-label')?.trim();
-                const name = el.name?.trim();
-                const id = el.id?.trim();
-                return [placeholder, label, ariaLabel, name, id].some(value => 
-                    value && value.toLowerCase().includes(searchText.toLowerCase())
-                );
-            });
-        }, '${cmd.selector.replace(/\[placeholder="(.*)"\]/, "$1")}');\n`;
-                        scriptContent += `    if (!inputField) throw new Error('Input field not found');\n`;
-                        scriptContent += `    await page.evaluate((selector) => {
-            const element = document.querySelector(selector);
-            if (element) {
-                element.click();
-                element.value = '';
-            }
-        }, inputField);\n`;
-                        scriptContent += `    await page.type(inputField, '${cmd.value}');\n`;
-                    }
-                    break;
-                case 'typeAndEnter':
-                    if (cmd.selector && cmd.value) {
-                        // Use the same robust selector logic for typeAndEnter
-                        scriptContent += `    await page.waitForSelector('input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([aria-hidden="true"]):not(.hidden):not(.invisible), textarea:not([aria-hidden="true"]):not(.hidden):not(.invisible)');\n`;
-                        scriptContent += `    const inputFieldWithEnter = await page.$$eval('input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([aria-hidden="true"]):not(.hidden):not(.invisible), textarea:not([aria-hidden="true"]):not(.hidden):not(.invisible)', (elements, searchText) => {
-            return elements.find(el => {
-                const placeholder = el.placeholder?.trim();
-                const label = el.labels?.[0]?.textContent?.trim();
-                const ariaLabel = el.getAttribute('aria-label')?.trim();
-                const name = el.name?.trim();
-                const id = el.id?.trim();
-                return [placeholder, label, ariaLabel, name, id].some(value => 
-                    value && value.toLowerCase().includes(searchText.toLowerCase())
-                );
-            });
-        }, '${cmd.selector.replace(/\[placeholder="(.*)"\]/, "$1")}');\n`;
-                        scriptContent += `    if (!inputFieldWithEnter) throw new Error('Input field not found');\n`;
-                        scriptContent += `    await page.evaluate((selector) => {
-            const element = document.querySelector(selector);
-            if (element) {
-                element.click();
-                element.value = '';
-            }
-        }, inputFieldWithEnter);\n`;
-                        scriptContent += `    await page.type(inputFieldWithEnter, '${cmd.value}');\n`;
-                        // Add a small delay before pressing Enter to ensure typing is complete
-                        scriptContent += `    await page.waitForTimeout(100);\n`;
-                        scriptContent += `    await page.keyboard.press('Enter');\n`;
-                        // Add a wait for navigation since Enter often triggers page changes
-                        scriptContent += `    try { await page.waitForNavigation({ waitUntil: 'networkidle0', timeout: 5000 }).catch(() => {}); } catch (e) {}\n`;
-                    }
-                    break;
-                case 'scroll':
-                    scriptContent += `    await page.evaluate(() => window.scrollBy(0, 500));\n`;
-                    break;
-                case 'back':
-                    scriptContent += `    await page.goBack();\n`;
-                    break;
-            }
-            scriptContent += `    await page.waitForTimeout(1000);\n`;
-        }
-
-        scriptContent += `    // await browser.close();\n`;
-        scriptContent += `})();`;
-
-        return scriptContent;
+    // Update getExecutedCommands to use only ScriptRunnerAgent compatible commands
+    public getExecutedCommands(): ScriptCommand[] {
+        return this.executedCommands.filter(cmd => cmd.type !== 'solveCaptcha');
     }
 
-    async performTask(task: string) {
+    async performTask(task: string): Promise<{ steps: { number: number; action: string; explanation: string; }[]; finalAnswer: string }> {
         if (!this.page) throw new Error('Browser not initialized');
         console.log('\n=== 🚀 Starting New Task ===');
         console.log('📝 Task:', task);
 
-        // Clean up screenshots directory at the start of each task
-        if (fs.existsSync(this.SCREENSHOTS_DIR)) {
-            fs.readdirSync(this.SCREENSHOTS_DIR).forEach(file => {
-                fs.unlinkSync(`${this.SCREENSHOTS_DIR}/${file}`);
-            });
-        }
+        // Reset steps array at the start of each task
+        this.steps = [];
 
         const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
             { role: 'system', content: SYSTEM_PROMPT },
@@ -603,13 +397,14 @@ class AIBrowserAgent {
 
         let stepCount = 0;
         const MAX_STEPS = 25;
+        let finalAnswer = '';
 
         while (stepCount < MAX_STEPS) {
             console.log(`\n=== 📍 Step ${stepCount + 1} of ${MAX_STEPS} ===`);
             try {
                 console.log('🤖 Invoking AI model...');
                 const chatResponse = await this.client.chat.completions.create({
-                    model: 'gpt-4o',
+                    model: 'gpt-4',
                     messages,
                     max_tokens: 1000,
                     tools: TOOLS
@@ -619,7 +414,6 @@ class AIBrowserAgent {
                 console.log('\n📢 AI Response:');
                 console.log('Content:', response.content);
                 console.log('Tool Calls:', JSON.stringify(response.tool_calls, null, 2));
-
 
                 if (response.content) {
                     console.log('\n🔍 Validating response...');
@@ -634,10 +428,9 @@ class AIBrowserAgent {
                         continue;
                     }
 
-                    // Add this block to handle final answers without tool calls
                     if (!response.tool_calls) {
                         console.log('\n✅ Final answer received (no tool calls):', validatedResponse);
-                        messages.push({ role: 'assistant', content: validatedResponse });
+                        finalAnswer = validatedResponse;
                         break;
                     }
                 }
@@ -645,7 +438,17 @@ class AIBrowserAgent {
                 if (response.tool_calls) {
                     console.log('\n🛠️ Executing tool calls...');
                     stepCount++;
-                    const screenshot = await this.executeAction(response.tool_calls[0], stepCount);
+                    const toolCall = response.tool_calls[0];
+                    const parsedArgs = JSON.parse(toolCall.function.arguments);
+                    
+                    // Add step before execution
+                    this.steps.push({
+                        number: stepCount,
+                        action: toolCall.function.name,
+                        explanation: parsedArgs.explanation || parsedArgs.action || 'Action being performed'
+                    });
+
+                    const screenshot = await this.executeAction(toolCall, stepCount);
                     console.log('Tool execution result:', screenshot ? 'Success' : 'Failed');
 
                     if (screenshot) {
@@ -653,13 +456,14 @@ class AIBrowserAgent {
                         messages.push({
                             role: 'user',
                             content: [
-                                { type: 'text', text: `Here is the screenshot after executing: ${response.tool_calls[0].function.name}` },
+                                { type: 'text', text: `Here is the screenshot after executing: ${toolCall.function.name}` },
                                 { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${screenshot}` } }
                             ] as OpenAI.Chat.ChatCompletionContentPart[]
                         });
                     }
                 } else {
                     console.log('\n✅ Final answer received:', response.content);
+                    finalAnswer = response.content || '';
                     break;
                 }
             } catch (error) {
@@ -673,18 +477,17 @@ class AIBrowserAgent {
                         content: 'Please try a different approach or search strategy.'
                     });
                 } else {
-                    throw error;
+                    finalAnswer = error instanceof Error ? error.message : 'Unknown error occurred';
+                    return { steps: this.steps, finalAnswer };
                 }
             }
         }
 
-        // At the end of performTask, print the executed commands
-        console.log('\n=== 📝 Executed Commands ===');
-        console.log(this.getExecutedCommands());
-        
         if (stepCount >= MAX_STEPS) {
-            console.log('⚠️ Maximum steps reached. Task may not be complete.');
+            finalAnswer = 'Maximum steps reached. Task could not be completed.';
         }
+
+        return { steps: this.steps, finalAnswer };
     }
 
     async close() {
