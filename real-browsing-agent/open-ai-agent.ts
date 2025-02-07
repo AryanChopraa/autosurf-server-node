@@ -489,14 +489,13 @@ class AIBrowserAgent {
                         content: 'Please try a different approach or search strategy.'
                     });
                 } else {
-                    finalAnswer = error instanceof Error ? error.message : 'Unknown error occurred';
-                    return { steps: this.steps, finalAnswer };
+                    throw error;
                 }
             }
         }
 
         if (stepCount >= MAX_STEPS) {
-            finalAnswer = 'Maximum steps reached. Task could not be completed.';
+            throw new Error('Maximum steps reached. Task could not be completed.');
         }
 
         return { steps: this.steps, finalAnswer };
