@@ -5,7 +5,7 @@ import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import BackgroundTexture from '@/components/BackgroundTexture';
 import { createClient } from '@supabase/supabase-js';
-import toast, { Toaster } from 'react-hot-toast';
+import toast from 'react-hot-toast';
 
 // Initialize Supabase client
 const supabase = createClient(
@@ -22,13 +22,11 @@ interface Step {
   number: number;
   action: string;
   explanation: string;
-  timestamp: string;
-  screenshot?: string;
 }
 
 interface WebSocketMessage {
-  type: 'authentication' | 'step_update' | 'completion' | 'error';
-  status?: 'completed' | 'failed';
+  type: 'authentication' | 'step_update' | 'completion' | 'error' | 'existing_run';
+  status?: 'completed' | 'failed' | 'success';
   error?: string;
   stepNumber?: number;
   screenshot?: string;
@@ -36,6 +34,8 @@ interface WebSocketMessage {
   explanation?: string;
   finalAnswer?: string;
   steps?: Step[];
+  commands?: any[];
+  run_objective?: string;
 }
 
 enum WebSocketErrorType {
@@ -73,7 +73,7 @@ class AgentWebSocketClient {
   private onStepUpdate?: (step: Step) => void;
   private onConnectionChange?: (status: boolean) => void;
   private onError?: (error: WebSocketError) => void;
-  private onCompletion?: (finalAnswer: string, steps: Step[]) => void;
+  private onCompletion?: (finalAnswer: string, steps: Step[], commands: any[]) => void;
   private state: AgentState = {
     isAuthenticated: false,
     isRunning: false,
@@ -86,7 +86,7 @@ class AgentWebSocketClient {
     onStepUpdate: (step: Step) => void,
     onConnectionChange: (status: boolean) => void,
     onError: (error: WebSocketError) => void,
-    onCompletion: (finalAnswer: string, steps: Step[]) => void
+    onCompletion: (finalAnswer: string, steps: Step[], commands: string[]) => void
   ) {
     this.onStepUpdate = onStepUpdate;
     this.onConnectionChange = onConnectionChange;
@@ -144,17 +144,19 @@ class AgentWebSocketClient {
     if (!this.ws) return;
 
     this.ws.onopen = () => {
-      console.log('Connected to WebSocket');
+      console.log('WebSocket connection opened');
       this.authenticate(token);
       this.reconnectAttempts = 0;
       this.onConnectionChange?.(true);
     };
 
     this.ws.onmessage = async (event) => {
+      console.log('Raw WebSocket message received:', event.data);
       try {
         const message = JSON.parse(event.data);
         await this.handleMessage(message);
       } catch (error) {
+        console.error('WebSocket message parsing error:', error);
         this.handleError(
           WebSocketErrorType.MESSAGE_ERROR,
           'Failed to process message from server'
@@ -163,7 +165,7 @@ class AgentWebSocketClient {
     };
 
     this.ws.onclose = (event) => {
-      console.log(`WebSocket connection closed. Code: ${event.code}, Reason: ${event.reason}`);
+      console.log('WebSocket connection closed:', { code: event.code, reason: event.reason });
       this.state.isAuthenticated = false;
       this.state.isRunning = false;
       this.onConnectionChange?.(false);
@@ -175,7 +177,7 @@ class AgentWebSocketClient {
 
     this.ws.onerror = (error) => {
       const errorMessage = error instanceof Error ? error.message : 'Connection error occurred';
-      console.log('WebSocket error:', errorMessage);
+      console.error('WebSocket error:', errorMessage);
       
       this.handleError(
         WebSocketErrorType.CONNECTION_ERROR,
@@ -202,8 +204,6 @@ class AgentWebSocketClient {
         number: Date.now(),
         action: 'Error',
         explanation: message,
-        timestamp: new Date().toISOString(),
-        screenshot: undefined
       });
     }
   }
@@ -217,12 +217,31 @@ class AgentWebSocketClient {
 
   private async handleMessage(message: WebSocketMessage) {
     try {
+      console.log('Received message:', message);
+      
+      // Handle completion or existing run first
+      if  (message.status === 'completed' || message.status === 'failed') {
+        console.log('Run is completed/failed, handling completion...');
+        const finalAnswer = message.finalAnswer || 'Task completed';
+        const steps = message.steps || [];
+        const commands = message.commands || [];
+        this.onCompletion?.(finalAnswer, steps, commands);
+        // Close connection as we don't need it for completed runs
+        this.close();
+        return;
+      }
+
       switch (message.type) {
         case 'authentication':
+          console.log('Authentication status:', message.status);
           if (message.status === 'success') {
-            console.log('Successfully authenticated');
+            console.log('Authentication successful, setting state...');
+            this.state.isAuthenticated = true;
+            console.log('Current state:', this.state);
             await this.startAgent();
           } else {
+            console.log('Authentication failed:', message.error);
+            this.state.isAuthenticated = false;
             this.handleError(
               WebSocketErrorType.AUTHENTICATION_ERROR,
               message.error || 'Authentication failed',
@@ -232,26 +251,18 @@ class AgentWebSocketClient {
           break;
 
         case 'step_update':
+          console.log('Step update received:', message);
           if (message.stepNumber && message.action && message.explanation) {
             this.onStepUpdate?.({
               number: message.stepNumber,
               action: message.action,
               explanation: message.explanation,
-              timestamp: new Date().toISOString(),
-              screenshot: message.screenshot
             });
           }
           break;
 
-        case 'completion':
-          if (message.status === 'completed' || message.status === 'failed') {
-            const finalAnswer = message.finalAnswer || 'Task completed';
-            const steps = message.steps || [];
-            this.onCompletion?.(finalAnswer, steps);
-          }
-          break;
-
         case 'error':
+          console.log('Error received:', message.error);
           this.handleError(
             WebSocketErrorType.AGENT_ERROR,
             message.error || 'Unknown error occurred',
@@ -260,6 +271,7 @@ class AgentWebSocketClient {
           break;
       }
     } catch (error) {
+      console.error('Message handling error:', error);
       this.handleError(
         WebSocketErrorType.MESSAGE_ERROR,
         'Failed to process message: ' + (error instanceof Error ? error.message : 'Unknown error')
@@ -268,22 +280,29 @@ class AgentWebSocketClient {
   }
 
   private async startAgent() {
+    console.log('Starting agent...');
+    console.log('Current state:', this.state);
+    
     if (this.state.isRunning) {
-      toast.error('Agent is already running');
+      console.warn('Agent is already running, skipping start');
       return;
     }
 
     if (!this.state.isAuthenticated) {
-      toast.error('Not authenticated');
+      console.warn('Not authenticated, cannot start agent');
       return;
     }
 
+    console.log('Setting agent to running state...');
     this.state.isRunning = true;
-    this.sendMessage({
+    
+    const startMessage = {
       type: 'start_agent',
       runId: this.runId,
       timestamp: new Date().toISOString()
-    });
+    };
+    console.log('Sending start message:', startMessage);
+    this.sendMessage(startMessage);
   }
 
   private sendMessage(message: any) {
@@ -309,14 +328,18 @@ class AgentWebSocketClient {
   }
 
   private handleReconnect() {
-    if (this.isIntentionallyClosed || this.reconnectAttempts >= this.maxReconnectAttempts) {
-      if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-        this.handleError(
-          WebSocketErrorType.CONNECTION_ERROR,
-          'Maximum reconnection attempts reached. Please refresh the page or try again later.',
-          true
-        );
-      }
+    // Don't reconnect if the connection was intentionally closed
+    if (this.isIntentionallyClosed) {
+      console.log('Connection was intentionally closed, skipping reconnect');
+      return;
+    }
+
+    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+      this.handleError(
+        WebSocketErrorType.CONNECTION_ERROR,
+        'Maximum reconnection attempts reached. Please refresh the page or try again later.',
+        true
+      );
       return;
     }
 
@@ -337,6 +360,7 @@ class AgentWebSocketClient {
   }
 
   public close() {
+    console.log('Closing WebSocket connection intentionally');
     this.isIntentionallyClosed = true;
     
     if (this.heartbeatInterval) {
@@ -363,19 +387,21 @@ export default function BrowserView({ params }: { params: Promise<{ id: string }
   const [isConnected, setIsConnected] = useState(false);
   const [connectionFailed, setConnectionFailed] = useState(false);
   const [finalAnswer, setFinalAnswer] = useState<string | null>(null);
+  const [commands, setCommands] = useState<string[]>([]);
   const router = useRouter();
 
   useEffect(() => {
     let wsClient: AgentWebSocketClient | null = null;
+    let isInitialized = false;
 
     const handleStepUpdate = (step: Step) => {
+      console.log('Step update received:', step);
       setSteps(prev => [...prev, step]);
-      if (step.screenshot) {
-        setCurrentImage(step.screenshot);
-      }
+      
     };
 
     const handleConnectionChange = (status: boolean) => {
+      console.log('Connection status changed:', status);
       setIsConnected(status);
       if (status) {
         setConnectionFailed(false);
@@ -383,16 +409,19 @@ export default function BrowserView({ params }: { params: Promise<{ id: string }
     };
 
     const handleError = (wsError: WebSocketError) => {
-      console.error(`WebSocket ${wsError.type}:`, wsError.message);
-      if (wsError.fatal) {
+      console.error('WebSocket error occurred:', wsError);
+      if (wsError.fatal && !isInitialized) {
         setConnectionFailed(true);
         toast.error(wsError.message);
+        isInitialized = true;
       }
     };
 
-    const handleCompletion = (answer: string, finalSteps: Step[]) => {
+    const handleCompletion = (answer: string, finalSteps: Step[], executedCommands: string[]) => {
+      console.log('Task completed:', { answer, stepsCount: finalSteps.length, commandsCount: executedCommands.length });
       setFinalAnswer(answer);
       setSteps(finalSteps);
+      setCommands(executedCommands);
     };
 
     wsClient = new AgentWebSocketClient(
@@ -405,6 +434,7 @@ export default function BrowserView({ params }: { params: Promise<{ id: string }
     );
 
     return () => {
+      console.log('Cleaning up WebSocket client');
       wsClient?.close();
     };
   }, [resolvedParams.id]);
@@ -480,10 +510,28 @@ export default function BrowserView({ params }: { params: Promise<{ id: string }
                 {isConnected && steps.length > 0 ? (
                   <>
                     {steps.map((step) => (
-                      <StepCard key={step.number} step={step} />
+                      <StepCard key={`step-${step.number}`} step={step} />
                     ))}
                     {finalAnswer && (
-                      <FinalAnswerCard answer={finalAnswer} />
+                      <>
+                        <FinalAnswerCard answer={finalAnswer} />
+                        {commands.length > 0 && (
+                          <div className="p-4 rounded-2xl bg-gray-50 border border-gray-100 mt-4">
+                            <div className="flex items-center gap-2 mb-2">
+                              <span className="px-3 py-1 rounded-full text-xs bg-gray-100 text-gray-700">
+                                Executed Commands
+                              </span>
+                            </div>
+                            <div className="space-y-2">
+                              {commands.map((cmd, index) => (
+                                <div key={`command-${index}`} className="text-sm text-gray-600 font-mono bg-white p-2 rounded">
+                                  {cmd}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </>
                     )}
                   </>
                 ) : (
@@ -494,7 +542,6 @@ export default function BrowserView({ params }: { params: Promise<{ id: string }
           </div>
         </div>
       </div>
-      <Toaster position="top-right" />
 
       <style jsx global>{`
         .custom-scrollbar::-webkit-scrollbar {
@@ -587,9 +634,6 @@ const StepCard = ({ step }: { step: Step }) => (
         <div className="flex items-center justify-between">
           <span className="px-3 py-1 rounded-full text-xs bg-green-100 text-green-700">
             Step {step.number}
-          </span>
-          <span className="text-sm text-[#1B1B1B]/40">
-            {new Date(step.timestamp).toLocaleTimeString()}
           </span>
         </div>
         <p className="text-[#1B1B1B]/80 ml-1">{step.action}</p>

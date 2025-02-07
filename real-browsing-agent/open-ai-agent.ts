@@ -49,6 +49,7 @@ class AIBrowserAgent {
     private sharedState: Map<string, string> = new Map();
     private executedCommands: ScriptCommand[] = [];
     private steps: { number: number; action: string; explanation: string; }[] = [];
+    public onStepUpdate: ((step: { number: number; action: string; explanation: string; }) => void) | null = null;
 
     constructor() {
         this.client = new OpenAI({
@@ -186,6 +187,11 @@ class AIBrowserAgent {
             console.error('Error capturing page state:', e);
             return null;
         }
+    }
+
+    // Add public method for capturing screenshots
+    public async captureScreenshot(): Promise<string | null> {
+        return this.capturePageState(0);  // Step count is not relevant for periodic screenshots
     }
 
     private async executeAction(toolCall: OpenAI.ChatCompletionMessageToolCall, stepCount: number): Promise<string | null> {
@@ -404,7 +410,7 @@ class AIBrowserAgent {
             try {
                 console.log('🤖 Invoking AI model...');
                 const chatResponse = await this.client.chat.completions.create({
-                    model: 'gpt-4',
+                    model: 'gpt-4o',
                     messages,
                     max_tokens: 1000,
                     tools: TOOLS
@@ -442,11 +448,17 @@ class AIBrowserAgent {
                     const parsedArgs = JSON.parse(toolCall.function.arguments);
                     
                     // Add step before execution
-                    this.steps.push({
+                    const newStep = {
                         number: stepCount,
-                        action: toolCall.function.name,
-                        explanation: parsedArgs.explanation || parsedArgs.action || 'Action being performed'
-                    });
+                        action: parsedArgs.action,
+                        explanation: parsedArgs.explanation
+                    };
+                    this.steps.push(newStep);
+
+                    // Call the step update callback if it exists
+                    if (this.onStepUpdate) {
+                        this.onStepUpdate(newStep);
+                    }
 
                     const screenshot = await this.executeAction(toolCall, stepCount);
                     console.log('Tool execution result:', screenshot ? 'Success' : 'Failed');

@@ -39,20 +39,43 @@ export class TypingWithEnterTool extends BaseTool {
 
         try {
             console.log('Typing with Enter tool');
-            // Wait for any navigation to complete
-            // await this.page.waitForNavigation({ waitUntil: 'networkidle0' }).catch(() => {});
+            
+            // Wait for the page to be ready
+            await this.page.waitForNetworkIdle({ timeout: 5000 }).catch(() => {});
+            
+            // Wait a bit for any dynamic content to load
+            await new Promise(resolve => setTimeout(resolve, 1000));
 
-            // Find the input field
-            const inputField = await this.findInputField(placeholder_value);
+            // Find the input field with retry mechanism
+            let inputField = null;
+            for (let i = 0; i < 3; i++) {
+                inputField = await this.findInputField(placeholder_value);
+                if (inputField) break;
+                await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+
             if (!inputField) {
                 throw new Error(`No input field found with placeholder/label: ${placeholder_value}`);
             }
 
+            // Ensure element is visible and clickable
+            await this.page.waitForFunction(
+                (el: Element) => {
+                    const rect = el.getBoundingClientRect();
+                    return rect.width > 0 && rect.height > 0 && window.getComputedStyle(el).visibility !== 'hidden';
+                },
+                { timeout: 5000 },
+                inputField
+            );
+            
             // Clear the field and type the new text
             await inputField.click({ clickCount: 3 }); // Select all text
             await inputField.press('Backspace'); // Clear the field
             await inputField.type(text, { delay: 50 }); // Type with a slight delay for realism
             await inputField.press('Enter'); // Press Enter after typing
+
+            // Wait for any navigation or network activity to complete
+            await this.page.waitForNetworkIdle({ timeout: 5000 }).catch(() => {});
 
             return 'Successfully typed text into input field and pressed Enter';
         } catch (error) {

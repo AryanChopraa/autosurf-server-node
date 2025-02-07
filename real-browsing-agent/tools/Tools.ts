@@ -49,7 +49,7 @@ export const TOOLS: Tool[] = [
                         description: 'Textual summary of the action being taken.'
                     }
                 },
-                required: ['url']
+                required: ['url', 'action', 'explanation']
             }
         }
     },
@@ -99,7 +99,7 @@ export const TOOLS: Tool[] = [
                         description: 'Textual summary of the action being taken.'
                     }
                 },
-                required: ['identifier']
+                required: ['identifier', 'action', 'explanation']
             }
         }
     },
@@ -128,7 +128,7 @@ export const TOOLS: Tool[] = [
                         description: 'Textual summary of the action being taken.'
                     }
                 },
-                required: ['placeholder_value', 'text']
+                required: ['placeholder_value', 'text', 'action', 'explanation']
             }
         }
     },
@@ -157,7 +157,7 @@ export const TOOLS: Tool[] = [
                         description: 'Textual summary of the action being taken.'
                     }
                 },
-                required: ['placeholder_value', 'text']
+                required: ['placeholder_value', 'text', 'action', 'explanation']
             }
         }
     },
@@ -178,7 +178,7 @@ export const TOOLS: Tool[] = [
                         description: 'Textual summary of the action being taken.'
                     }
                 },
-                required: []
+                required: ['action', 'explanation']
             }
         }
     },
@@ -199,7 +199,7 @@ export const TOOLS: Tool[] = [
                         description: 'Textual summary of the action being taken.'
                     }
                 },
-                required: []
+                required: ['action', 'explanation']
             }
         }
     },
@@ -220,7 +220,7 @@ export const TOOLS: Tool[] = [
                         description: 'Textual summary of the action being taken.'
                     }
                 },
-                required: []
+                required: ['action', 'explanation']
             }
         }
     }
