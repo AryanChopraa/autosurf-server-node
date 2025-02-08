@@ -17,7 +17,7 @@ import {
 // Create the base Supabase client for authentication only
 const supabaseAuth = createClient(config.supabaseUrl!, config.supabaseKey!);
 
-const SCREENSHOT_UPDATE_INTERVAL = 1000; // 1 second
+const SCREENSHOT_UPDATE_INTERVAL = 300; // 1 second
 
 export class AgentWebSocketServer {
     private wss: WebSocketServer;

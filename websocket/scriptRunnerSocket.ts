@@ -8,21 +8,28 @@ import {
     Automation,
     ScriptCommand
 } from '../types';
+import { OpenAI } from 'openai';
+const fs = require('fs');
+const path = require('path');
 
 const supabaseAuth = createClient(config.supabaseUrl!, config.supabaseKey!);
-const SCREENSHOT_UPDATE_INTERVAL = 100; // 1 second
+const SCREENSHOT_UPDATE_INTERVAL = 500; // 1 second
 
 export class ScriptRunnerWebSocketServer {
     private wss: WebSocketServer;
     private activeAgents: Map<string, ScriptRunnerAgent> = new Map();
     private heartbeatInterval: NodeJS.Timeout;
     private screenshotIntervals: Map<string, NodeJS.Timeout> = new Map();
+    private client: OpenAI;
 
     constructor(server: Server) {
         console.log('🚀 Initializing ScriptRunnerWebSocketServer...');
         this.wss = new WebSocketServer({ noServer: true });
         this.setupWebSocketServer();
         this.heartbeatInterval = this.setupHeartbeat();
+        this.client = new OpenAI({
+            apiKey: process.env.OPENAI_API_KEY,
+        });
         console.log('✅ ScriptRunnerWebSocketServer initialized successfully');
     }
 
@@ -80,7 +87,7 @@ export class ScriptRunnerWebSocketServer {
                 });
                 
                 if (screenshot) {
-                    console.log('📸 Sending screenshot update');
+                    // console.log('📸 Sending screenshot update');
                     ws.send(JSON.stringify({
                         type: 'screenshot_update',
                         screenshot,
@@ -103,6 +110,76 @@ export class ScriptRunnerWebSocketServer {
             clearInterval(interval);
             this.screenshotIntervals.delete(automationId);
             console.log('✅ Screenshot updates stopped successfully');
+        }
+    }
+
+    private async analyzeScreenshotWithGPT(screenshot: string, automation: Automation): Promise<string> {
+        console.log('🤖 Analyzing final screenshot with GPT-4V...');
+        
+        if (!screenshot) {
+            console.error('❌ No screenshot data provided');
+            return "Unable to analyze: No screenshot data available";
+        }
+
+        // Validate base64 format
+        if (!screenshot.match(/^[A-Za-z0-9+/=]+$/)) {
+            console.error('❌ Invalid base64 format for screenshot');
+            return "Unable to analyze: Invalid screenshot format";
+        }
+
+        try {
+            console.log('📸 Screenshot size:', Math.round(screenshot.length / 1024), 'KB');
+            console.log('📸 Screenshot data (first 100 chars):', screenshot.substring(0, 100));
+            
+            const response = await this.client.chat.completions.create({
+                model: "gpt-4o",
+                messages: [
+                    {
+                        role: "user",
+                        content: [
+                            {
+                                type: "text",
+                                text: `You are analyzing the final result of an automation named "${automation.automation_name}" with the objective: "${automation.objective}". Based on the final screenshot, provide a concise summary of what was achieved. Focus only on the key information or data that was gathered/shown in relation to the objective.`
+                            },
+                            {
+                                type: "image_url",
+                                image_url: {
+                                    url: `data:image/jpeg;base64,${screenshot}`,
+                                    detail: "high"
+                                }
+                            }
+                        ],
+                    }
+                ],
+                max_tokens: 150
+            });
+
+            if (!response.choices?.[0]?.message?.content) {
+                console.error('❌ No response content from GPT');
+                return "Unable to analyze: No response from analysis";
+            }
+
+            // Store the screenshot data
+            const screenshotPath = path.join(__dirname, 'screenshots', `${automation.automation_name}_final_screenshot.jpeg`);
+
+            // Ensure the directory exists
+            fs.mkdirSync(path.dirname(screenshotPath), { recursive: true });
+
+            // Write the screenshot to a file
+            fs.writeFileSync(screenshotPath, screenshot, { encoding: 'base64' });
+            console.log('📁 Screenshot stored at:', screenshotPath);
+
+            return response.choices[0].message.content;
+        } catch (error) {
+            console.error('❌ Error analyzing screenshot:', error);
+            if (error instanceof Error) {
+                console.error('Error details:', error.message);
+                if (error.message.includes('413') || error.message.includes('too large')) {
+                    return "Unable to analyze: Screenshot file size too large";
+                }
+                return `Unable to analyze the final result: ${error.message}`;
+            }
+            return "Unable to analyze the final result due to an error.";
         }
     }
 
@@ -170,6 +247,7 @@ export class ScriptRunnerWebSocketServer {
                     console.log(`✅ Step ${i + 1} completed successfully`);
                     ws.send(JSON.stringify({
                         type: 'step_completed',
+                        
                         number: i + 1
                     }));
                 } catch (error) {
@@ -183,9 +261,23 @@ export class ScriptRunnerWebSocketServer {
             }
 
             console.log('🎉 All steps completed successfully');
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
+            // Get the final screenshot and analyze it
+            const finalScreenshot = await agent.page?.screenshot({ 
+                encoding: 'base64',
+                type: 'jpeg',
+                quality: 80
+            });
+
+            let finalAnalysis = "Automation completed successfully.";
+            if (finalScreenshot && automationData) {
+                finalAnalysis = await this.analyzeScreenshotWithGPT(finalScreenshot, automationData);
+            }
+
             ws.send(JSON.stringify({
                 type: 'completion',
-                message: 'All steps completed successfully'
+                message: finalAnalysis
             }));
 
             // Add delay to ensure final screenshot is captured and sent
