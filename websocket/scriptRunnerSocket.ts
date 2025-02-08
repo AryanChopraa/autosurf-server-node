@@ -10,7 +10,7 @@ import {
 } from '../types';
 
 const supabaseAuth = createClient(config.supabaseUrl!, config.supabaseKey!);
-const SCREENSHOT_UPDATE_INTERVAL = 1000; // 1 second
+const SCREENSHOT_UPDATE_INTERVAL = 100; // 1 second
 
 export class ScriptRunnerWebSocketServer {
     private wss: WebSocketServer;
