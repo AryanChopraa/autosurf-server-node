@@ -260,8 +260,27 @@ export class ScriptRunnerWebSocketServer {
                 }
             }
 
+      
+
+
             console.log('🎉 All steps completed successfully');
-            await new Promise(resolve => setTimeout(resolve, 1000));
+            await new Promise(resolve => setTimeout(resolve, 1500));
+            const hasCaptcha = await agent.detectCaptcha();
+            if (hasCaptcha) {
+                ws.send(JSON.stringify({
+                    type: 'captcha_detected'
+                }));
+                console.log('🔒 CAPTCHA detected');
+                if (!agent.captchaSolver) throw new Error('Captcha solver not initialized');
+                const result = await agent.captchaSolver.run();
+                if (!result.includes('Success')) {
+                    throw new Error('Failed to solve CAPTCHA');
+                }
+                ws.send(JSON.stringify({
+                    type: 'captcha_solved'
+                }));
+           
+            }
             
             // Get the final screenshot and analyze it
             const finalScreenshot = await agent.page?.screenshot({ 

@@ -21,7 +21,7 @@ export class ScriptRunnerAgent {
     private clickTool: ClickTool | null = null;
     private typingTool: TypingTool | null = null;
     private typingWithEnterTool: TypingWithEnterTool | null = null;
-    private captchaSolver: CaptchaSolverTool | null = null;
+    public captchaSolver: CaptchaSolverTool | null = null;
     private scrollTool: ScrollTool | null = null;
     private backTool: BackTool | null = null;
 
