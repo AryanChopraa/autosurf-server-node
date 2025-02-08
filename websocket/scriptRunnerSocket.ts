@@ -159,15 +159,15 @@ export class ScriptRunnerWebSocketServer {
                 return "Unable to analyze: No response from analysis";
             }
 
-            // Store the screenshot data
-            const screenshotPath = path.join(__dirname, 'screenshots', `${automation.automation_name}_final_screenshot.jpeg`);
+            // // Store the screenshot data
+            // const screenshotPath = path.join(__dirname, 'screenshots', `${automation.automation_name}_final_screenshot.jpeg`);
 
-            // Ensure the directory exists
-            fs.mkdirSync(path.dirname(screenshotPath), { recursive: true });
+            // // Ensure the directory exists
+            // fs.mkdirSync(path.dirname(screenshotPath), { recursive: true });
 
-            // Write the screenshot to a file
-            fs.writeFileSync(screenshotPath, screenshot, { encoding: 'base64' });
-            console.log('📁 Screenshot stored at:', screenshotPath);
+            // // Write the screenshot to a file
+            // fs.writeFileSync(screenshotPath, screenshot, { encoding: 'base64' });
+            // console.log('📁 Screenshot stored at:', screenshotPath);
 
             return response.choices[0].message.content;
         } catch (error) {
