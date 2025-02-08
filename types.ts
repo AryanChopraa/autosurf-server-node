@@ -50,7 +50,7 @@ export interface AgentRun {
     completed_at: string | null;
     status: AgentRunStatus;
     steps: AgentRunSteps | null;
-    commands: string[] | null;
+    commands: ScriptCommand[] | null;
 }
 
 // Extended WebSocket interface with custom properties
@@ -81,3 +81,13 @@ export interface ExtendedAIBrowserAgent {
     captureScreenshot(): Promise<string | null>;
     onStepUpdate: ((step: Step) => void) | null;
 } 
+
+export interface Automation {
+    id: string;
+    user_id: string;
+    automation_name: string;
+    steps: ScriptCommand[];
+    objective: string;
+    created_at: string;
+    updated_at?: string|null;
+}

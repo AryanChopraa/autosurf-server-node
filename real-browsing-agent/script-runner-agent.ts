@@ -12,7 +12,7 @@ import { ScriptCommand, ElementInfo } from '../types';
 
 export class ScriptRunnerAgent {
     private browser: puppeteer.Browser | null = null;
-    private page: puppeteer.Page | null = null;
+    public page: puppeteer.Page | null = null;
     private client: OpenAI;
     
     // Tools
@@ -37,7 +37,7 @@ export class ScriptRunnerAgent {
     async initialize() {
         console.log('Starting browser...');
         this.browser = await puppeteer.launch({
-            headless: false,
+            headless: true,
             args: [
                 '--window-size=1440,900',
                 '--disable-web-security',
@@ -67,7 +67,7 @@ export class ScriptRunnerAgent {
         console.log('Browser and tools initialized successfully');
     }
 
-    private async detectCaptcha(): Promise<boolean> {
+    public async detectCaptcha(): Promise<boolean> {
         if (!this.page) {
             console.log('🔒 CAPTCHA Detection: Page not initialized');
             return false;
@@ -171,10 +171,20 @@ export class ScriptRunnerAgent {
         }
     }
 
-    private async executeCommand(command: ScriptCommand) {
+    public async executeCommand(command: ScriptCommand) {
         if (!this.page) throw new Error('Page not initialized');
         
         try {
+            // Check for CAPTCHA before executing command
+            const hasCaptcha = await this.detectCaptcha();
+            if (hasCaptcha) {
+                if (!this.captchaSolver) throw new Error('Captcha solver not initialized');
+                const result = await this.captchaSolver.run();
+                if (!result.includes('Success')) {
+                    throw new Error('Failed to solve CAPTCHA');
+                }
+            }
+
             switch (command.type) {
                 case 'navigation':
                     if (!this.navigationTool) throw new Error('Navigation tool not initialized');

@@ -27,10 +27,16 @@ export class AgentWebSocketServer {
 
     constructor(server: Server) {
         console.log('Initializing AgentWebSocketServer...');
-        this.wss = new WebSocketServer({ server });
+        this.wss = new WebSocketServer({ noServer: true });
         this.setupWebSocketServer();
         this.heartbeatInterval = this.setupHeartbeat();
         console.log('AgentWebSocketServer initialized successfully');
+    }
+
+    public handleUpgrade(request: any, socket: any, head: any) {
+        this.wss.handleUpgrade(request, socket, head, (ws) => {
+            this.wss.emit('connection', ws, request);
+        });
     }
 
     private setupHeartbeat() {

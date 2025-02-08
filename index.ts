@@ -7,6 +7,7 @@ import routes from './routes/index';
 import { errorHandler } from './middleware/errorHandler';
 import { createServer } from 'http';
 import { AgentWebSocketServer } from './websocket/agentSocket';
+import { ScriptRunnerWebSocketServer } from './websocket/scriptRunnerSocket';
 
 const app = express();
 
@@ -26,8 +27,23 @@ app.use('/api', routes);
 // Create HTTP server
 const server = createServer(app);
 
-// Initialize WebSocket server
-const wss = new AgentWebSocketServer(server);
+// Initialize WebSocket servers without paths
+const agentWss = new AgentWebSocketServer(server);
+const scriptRunnerWss = new ScriptRunnerWebSocketServer(server);
+
+// Handle WebSocket upgrade requests
+server.on('upgrade', (request, socket, head) => {
+  const pathname = new URL(request.url!, `http://${request.headers.host}`).pathname;
+
+  if (pathname === '/agent') {
+    agentWss.handleUpgrade(request, socket, head);
+  } else if (pathname === '/automation') {
+    scriptRunnerWss.handleUpgrade(request, socket, head);
+  } else {
+    // Reject unhandled upgrade requests
+    socket.destroy();
+  }
+});
 
 // Error handling
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
@@ -37,7 +53,8 @@ app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
 // Handle server shutdown
 process.on('SIGTERM', () => {
   console.log('SIGTERM signal received: closing HTTP server');
-  wss.close();
+  agentWss.close();
+  scriptRunnerWss.close();
   server.close(() => {
     console.log('HTTP server closed');
     process.exit(0);
