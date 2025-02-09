@@ -23,6 +23,9 @@ app.use(cors({
 
 // Routes
 app.use('/api', routes);
+app.get('/health', (req, res) => {
+  res.status(200).send('OK');
+});
 
 // Create HTTP server
 const server = createServer(app);
