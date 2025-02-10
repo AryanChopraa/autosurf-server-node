@@ -11,8 +11,13 @@ import { ScriptRunnerWebSocketServer } from './websocket/scriptRunnerSocket';
 
 const app: Application = express();
 
-// Simplified CORS setup
-app.use(cors());
+// Specific CORS configuration
+app.use(cors({
+  origin: 'https://autosurf.tech',
+  // methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  // allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true
+}));
 
 // Other middleware
 app.use(morgan('dev'));
