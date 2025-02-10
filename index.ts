@@ -18,8 +18,15 @@ app.use(morgan('dev')); // Logs: :method :url :status :response-time ms - :res[c
 app.use(express.json());
 app.use(cors({
   origin: ['https://autosurf.tech', config.clientUrl],
-  credentials: true
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
+  exposedHeaders: ['Content-Range', 'X-Content-Range'],
+  maxAge: 600 // Increase preflight cache to 10 minutes
 }));
+
+// Add preflight handling for all routes
+app.options('*', cors());
 
 // Routes
 app.use('/api', routes);
