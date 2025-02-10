@@ -11,22 +11,32 @@ import { ScriptRunnerWebSocketServer } from './websocket/scriptRunnerSocket';
 
 const app = express();
 
-// Logging middleware
-app.use(morgan('dev')); // Logs: :method :url :status :response-time ms - :res[content-length]
-
-// Regular middleware
-app.use(express.json());
-app.use(cors({
-  origin: ['https://autosurf.tech', config.clientUrl],
+// Create CORS configuration
+const corsOptions = {
+  origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
+    const allowedOrigins = ['https://autosurf.tech', config.clientUrl];
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
   exposedHeaders: ['Content-Range', 'X-Content-Range'],
-  maxAge: 600 // Increase preflight cache to 10 minutes
-}));
+  maxAge: 600
+};
 
-// Add preflight handling for all routes
-app.options('*', cors());
+// Enable CORS pre-flight requests for all routes
+app.options('*', cors(corsOptions));
+
+// Apply CORS middleware first
+app.use(cors(corsOptions));
+
+// Other middleware
+app.use(morgan('dev'));
+app.use(express.json());
 
 // Routes
 app.use('/api', routes);
