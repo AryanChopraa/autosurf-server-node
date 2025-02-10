@@ -10,6 +10,10 @@ services:
       - ./captcha-data:/usr/src/app/captcha-data
     environment:
       - NODE_ENV=development
+    security_opt: 
+      - seccomp=unconfined
+    cap_add:
+      - SYS_ADMIN
     networks:
       - app-network
 

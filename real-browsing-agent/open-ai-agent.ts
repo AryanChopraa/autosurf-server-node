@@ -66,9 +66,14 @@ class AIBrowserAgent {
                 '--disable-web-security',
                 '--disable-features=IsolateOrigins,site-per-process',
                 '--no-sandbox',
-                '--disable-setuid-sandbox'
-            ]
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-gpu'
+            ],
+            executablePath: '/usr/bin/google-chrome'
         });
+
+ 
         this.page = await this.browser.newPage();
         await this.page.setViewport({ width: 1440, height: 900 });
         
