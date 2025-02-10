@@ -11,27 +11,8 @@ import { ScriptRunnerWebSocketServer } from './websocket/scriptRunnerSocket';
 
 const app: Application = express();
 
-// CORS configuration
-const corsOptions: cors.CorsOptions = {
-  origin: ['https://autosurf.tech', config.clientUrl, 'http://localhost:3000'],
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
-  exposedHeaders: ['Content-Range', 'X-Content-Range'],
-  optionsSuccessStatus: 204
-};
-
-// Apply CORS middleware
-app.use(cors(corsOptions));
-
-// Fix: Correctly typed preflight request handler
-app.options('*', (req: Request, res: Response) => {
-  res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
-  res.header('Access-Control-Allow-Credentials', 'true');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin');
-  res.sendStatus(204);
-});
+// Simplified CORS setup
+app.use(cors());
 
 // Other middleware
 app.use(morgan('dev'));
