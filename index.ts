@@ -14,7 +14,7 @@ const app = express();
 // Create CORS configuration
 const corsOptions = {
   origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
-    const allowedOrigins = ['https://autosurf.tech', config.clientUrl];
+    const allowedOrigins = ['https://autosurf.tech', config.clientUrl, 'http://localhost:3000'];
     if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
@@ -24,7 +24,7 @@ const corsOptions = {
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
-  exposedHeaders: ['Content-Range', 'X-Content-Range', 'Access-Control-Allow-Credentials'],
+  exposedHeaders: ['Content-Range', 'X-Content-Range'],
   maxAge: 600,
   preflightContinue: false,
   optionsSuccessStatus: 204
@@ -33,20 +33,15 @@ const corsOptions = {
 // Enable CORS pre-flight requests for all routes
 app.options('*', cors(corsOptions));
 
-// Apply CORS middleware first
+// Apply middleware in the correct order
+// 1. CORS middleware first
 app.use(cors(corsOptions));
 
-// Add a middleware to ensure credentials header is set
-app.use((req: Request, res: Response, next: NextFunction) => {
-  res.header('Access-Control-Allow-Credentials', 'true');
-  next();
-});
-
-// Other middleware
+// 2. Other middleware
 app.use(morgan('dev'));
 app.use(express.json());
 
-// Routes
+// 3. Routes
 app.use('/api', routes);
 app.get('/health', (req, res) => {
   res.status(200).send('OK');
