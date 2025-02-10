@@ -17,7 +17,7 @@ app.use(morgan('dev')); // Logs: :method :url :status :response-time ms - :res[c
 // Regular middleware
 app.use(express.json());
 app.use(cors({
-  origin: config.clientUrl,
+  origin: ['https://autosurf.tech', config.clientUrl],
   credentials: true
 }));
 
