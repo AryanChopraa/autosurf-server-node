@@ -23,9 +23,11 @@ const corsOptions = {
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
-  exposedHeaders: ['Content-Range', 'X-Content-Range'],
-  maxAge: 600
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
+  exposedHeaders: ['Content-Range', 'X-Content-Range', 'Access-Control-Allow-Credentials'],
+  maxAge: 600,
+  preflightContinue: false,
+  optionsSuccessStatus: 204
 };
 
 // Enable CORS pre-flight requests for all routes
@@ -33,6 +35,12 @@ app.options('*', cors(corsOptions));
 
 // Apply CORS middleware first
 app.use(cors(corsOptions));
+
+// Add a middleware to ensure credentials header is set
+app.use((req: Request, res: Response, next: NextFunction) => {
+  res.header('Access-Control-Allow-Credentials', 'true');
+  next();
+});
 
 // Other middleware
 app.use(morgan('dev'));
