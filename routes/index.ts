@@ -4,6 +4,8 @@ import agentRoutes from './agentRoutes';
 import automationRoutes from './automationRoutes';
 const router = Router();
 
+// Health check route
+
 // User routes (includes API key management)
 router.use('/users', userRoutes);
 router.use('/agent', agentRoutes);

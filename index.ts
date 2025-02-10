@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import express, { Request, Response, NextFunction } from 'express';
+import express, { Request, Response, NextFunction, Application } from 'express';
 import cors from 'cors';
 import morgan from 'morgan';
 import { config } from './config/index';
@@ -9,48 +9,44 @@ import { createServer } from 'http';
 import { AgentWebSocketServer } from './websocket/agentSocket';
 import { ScriptRunnerWebSocketServer } from './websocket/scriptRunnerSocket';
 
-const app = express();
+const app: Application = express();
 
-// Create CORS configuration
-const corsOptions = {
-  origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
-    const allowedOrigins = ['https://autosurf.tech', config.clientUrl, 'http://localhost:3000'];
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
+// CORS configuration
+const corsOptions: cors.CorsOptions = {
+  origin: ['https://autosurf.tech', config.clientUrl, 'http://localhost:3000'],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
   exposedHeaders: ['Content-Range', 'X-Content-Range'],
-  maxAge: 600,
-  preflightContinue: false,
   optionsSuccessStatus: 204
 };
 
-// Enable CORS pre-flight requests for all routes
-app.options('*', cors(corsOptions));
-
-// Apply middleware in the correct order
-// 1. CORS middleware first
+// Apply CORS middleware
 app.use(cors(corsOptions));
 
-// 2. Other middleware
+// Fix: Correctly typed preflight request handler
+app.options('*', (req: Request, res: Response) => {
+  res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin');
+  res.sendStatus(204);
+});
+
+// Other middleware
 app.use(morgan('dev'));
 app.use(express.json());
 
-// 3. Routes
+// Routes
 app.use('/api', routes);
-app.get('/health', (req, res) => {
+app.get('/health', (_req: Request, res: Response) => {
   res.status(200).send('OK');
 });
 
 // Create HTTP server
 const server = createServer(app);
 
-// Initialize WebSocket servers without paths
+// Initialize WebSocket servers
 const agentWss = new AgentWebSocketServer(server);
 const scriptRunnerWss = new ScriptRunnerWebSocketServer(server);
 
@@ -63,7 +59,6 @@ server.on('upgrade', (request, socket, head) => {
   } else if (pathname === '/automation') {
     scriptRunnerWss.handleUpgrade(request, socket, head);
   } else {
-    // Reject unhandled upgrade requests
     socket.destroy();
   }
 });
@@ -73,21 +68,19 @@ app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
   errorHandler(err, req, res, next);
 });
 
-// Handle server shutdown
+// Server shutdown handling
 process.on('SIGTERM', () => {
-  console.log('SIGTERM signal received: closing HTTP server');
+  console.log('SIGTERM received: closing server');
   agentWss.close();
   scriptRunnerWss.close();
   server.close(() => {
-    console.log('HTTP server closed');
+    console.log('Server closed');
     process.exit(0);
   });
 });
 
 // Start server
 const PORT = config.port;
-server.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
-});
+server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
 export default app;
